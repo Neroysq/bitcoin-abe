@@ -419,6 +419,8 @@ class Abe:
         hi = get_int_param(page, 'hi')
         orig_hi = hi
 
+        abe.store.log.debug("hi: " + str(hi))
+
         if hi is None:
             row = abe.store.selectrow("""
                 SELECT b.block_height
@@ -585,7 +587,11 @@ class Abe:
             if b['height'] is not None else '',
 
             'Version: ', b['version'], '<br />\n',
+            'scriptPubKey of creator: ', abe.store.binout_hex(b['scriptPubKey']).encode('hex'), '<br />\n',
+            'Hash of previous episode:', b['hashPrevEpisode'], '<br />\n',
             'Transaction Merkle Root: ', b['hashMerkleRoot'], '<br />\n',
+            'Hash of fruits: ', b['hashFruits'], '<br />\n',
+            'Fruits: ', len(b['fruits']), '<br />\n',
             'Time: ', b['nTime'], ' (', format_time(b['nTime']), ')<br />\n',
             'Difficulty: ', format_difficulty(util.calculate_difficulty(b['nBits'])),
             ' (Bits: %x)' % (b['nBits'],), '<br />\n',
@@ -630,15 +636,9 @@ class Abe:
                      '</td><td>', tx['size'] / 1000.0,
                      '</td><td>']
 
-            if tx is b['transactions'][0]:
-                body += [
-                    'POS ' if is_stake_block else '',
-                    'Generation: ', format_satoshis(b['generated'], chain), ' + ',
-                    format_satoshis(b['fees'], chain), ' total fees']
-            else:
-                for txin in tx['in']:
-                    body += [abe.format_addresses(txin, page['dotdot'], chain), ': ',
-                             format_satoshis(txin['value'], chain), '<br />']
+            for txin in tx['in']:
+                body += [abe.format_addresses(txin, page['dotdot'], chain), ': ',
+                        format_satoshis(txin['value'], chain), '<br />']
 
             body += ['</td><td>']
             for txout in tx['out']:
@@ -658,6 +658,23 @@ class Abe:
 
             body += ['</td></tr>\n']
         body += '</table>\n'
+
+        body += ['<h3>Fruits</h3>\n']
+
+        body += ['<table><tr><th>Fruits</th><th>Hash</th>'
+                 '<th>Hash of previous episode</th><th>Creator</th>'
+                 '</tr>\n']
+
+        for (idx, frt) in enumerate(b['fruits']):
+            body += ['<tr><td>',
+                    idx,
+                    '</td><td>', frt['hash'],
+                     '</td><td>', frt['hashPrevEpisode'],
+                     '</td><td>', abe.store.binout_hex(frt['scriptPubKey']).encode('hex'),
+                     '</td></tr>\n']
+
+        body += '</table>\n'
+
 
     def handle_block(abe, page):
         block_hash = wsgiref.util.shift_path_info(page['env'])
@@ -730,7 +747,7 @@ class Abe:
         for tx_cc in tx['chain_candidates']:
             if chain is None:
                 chain = tx_cc['chain']
-                is_coinbase = (tx_cc['tx_pos'] == 0)
+                is_coinbase = (tx_cc['tx_pos'] == -1)
             elif tx_cc['chain'].id != chain.id:
                 abe.log.warning('Transaction ' + tx['hash'] + ' in multiple chains: '
                              + tx_cc['chain'].id + ', ' + chain.id)

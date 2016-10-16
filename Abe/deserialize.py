@@ -104,7 +104,7 @@ def deserialize_Transaction(d, transaction_index=None, owner_keys=None, print_ra
     result += deserialize_TxOut(txOut, owner_keys) + "\n"
   if print_raw_tx == True:
       result += "Transaction hex value: " + d['__data__'].encode('hex') + "\n"
-  
+
   return result
 
 def parse_MerkleTx(vds):
@@ -175,29 +175,38 @@ def parse_BlockHeader(vds):
   header_start = vds.read_cursor
   d['version'] = vds.read_int32()
   d['hashPrev'] = vds.read_bytes(32)
+  d['hashPrevEpisode'] = vds.read_bytes(32)
   d['hashMerkleRoot'] = vds.read_bytes(32)
+  d['hashFruits'] = vds.read_bytes(32)
   d['nTime'] = vds.read_uint32()
   d['nBits'] = vds.read_uint32()
   d['nNonce'] = vds.read_uint32()
+  d['scriptPubKey'] = vds.read_bytes(vds.read_compact_size())
   header_end = vds.read_cursor
   d['__header__'] = vds.input[header_start:header_end]
   return d
 
 def parse_Block(vds):
-  d = parse_BlockHeader(vds)
-  d['transactions'] = []
+    d = parse_BlockHeader(vds)
+    d['transactions'] = []
 #  if d['version'] & (1 << 8):
 #    d['auxpow'] = parse_AuxPow(vds)
-  nTransactions = vds.read_compact_size()
-  for i in xrange(nTransactions):
-    d['transactions'].append(parse_Transaction(vds))
+    nTransactions = vds.read_compact_size()
+    for i in xrange(nTransactions):
+        d['transactions'].append(parse_Transaction(vds))
 
-  return d
-  
+    d['fruits'] = []
+    nFruits = vds.read_compact_size()
+    for i in xrange(nFruits) :
+        d['fruits'].append(parse_BlockHeader(vds))
+    return d
+
 def deserialize_Block(d, print_raw_tx=False):
   result = "Time: "+time.ctime(d['nTime'])+" Nonce: "+str(d['nNonce'])
   result += "\nnBits: 0x"+hex(d['nBits'])
   result += "\nhashMerkleRoot: 0x"+d['hashMerkleRoot'][::-1].encode('hex_codec')
+  result += "\nhashPrevEpisode: 0x" + d['hashPrevEpisode'][::-1].encode('hex_codec')
+  result += "\nhashFruits: 0x" + d['hashFruits'][::-1].encode('hex_codec')
   result += "\nPrevious block: "+d['hashPrev'][::-1].encode('hex_codec')
   result += "\n%d transactions:\n"%len(d['transactions'])
   for t in d['transactions']:

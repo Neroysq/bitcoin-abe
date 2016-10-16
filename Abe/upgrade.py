@@ -5,12 +5,12 @@
 # it under the terms of the GNU Affero General Public License as
 # published by the Free Software Foundation, either version 3 of the
 # License, or (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful, but
 # WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 # Affero General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU Affero General Public
 # License along with this program.  If not, see
 # <http://www.gnu.org/licenses/agpl.html>.
@@ -324,10 +324,13 @@ def replace_chain_summary(store):
             b.block_id,
             b.block_hash,
             b.block_version,
+            b.block_hashPrevEpisode,
             b.block_hashMerkleRoot,
+            b.block_hashFruits,
             b.block_nTime,
             b.block_nBits,
             b.block_nNonce,
+            b.block_scriptPubKey,
             cc.block_height,
             b.prev_block_id,
             prev.block_hash prev_block_hash,

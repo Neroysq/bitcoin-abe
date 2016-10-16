@@ -6,12 +6,12 @@
 # it under the terms of the GNU Affero General Public License as
 # published by the Free Software Foundation, either version 3 of the
 # License, or (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful, but
 # WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 # Affero General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU Affero General Public
 # License along with this program.  If not, see
 # <http://www.gnu.org/licenses/agpl.html>.
@@ -96,7 +96,7 @@ PUBKEY_ID_NETWORK_FEE = NULL_PUBKEY_ID
 
 # Size of the script and pubkey columns in bytes.
 MAX_SCRIPT = 1000000
-MAX_PUBKEY = 65
+MAX_PUBKEY = 100
 
 NO_CLOB = 'BUG_NO_CLOB'
 
@@ -187,6 +187,7 @@ class DataStore(object):
 
         store.refresh_ddl()
 
+        store.log.debug("store.config: " + str(store.config))
         if store.config is None:
             store.initialize()
         else:
@@ -522,10 +523,13 @@ class DataStore(object):
     b.block_id,
     b.block_hash,
     b.block_version,
+    b.block_hashPrevEpisode,
     b.block_hashMerkleRoot,
+    b.block_hashFruits,
     b.block_nTime,
     b.block_nBits,
     b.block_nNonce,
+    b.block_scriptPubKey,
     cc.block_height,
     b.prev_block_id,
     prev.block_hash prev_block_hash,
@@ -653,10 +657,13 @@ store._ddl['configvar'],
     block_id      NUMERIC(14) NOT NULL PRIMARY KEY,
     block_hash    BINARY(32)  UNIQUE NOT NULL,
     block_version NUMERIC(10),
+    block_hashPrevEpisode BINARY(32),
     block_hashMerkleRoot BINARY(32),
+    block_hashFruits BINARY(32),
     block_nTime   NUMERIC(20),
     block_nBits   NUMERIC(10),
     block_nNonce  NUMERIC(10),
+    block_scriptPubKey VARBINARY(""" + str(MAX_PUBKEY) + """),
     block_height  NUMERIC(14) NULL,
     prev_block_id NUMERIC(14) NULL,
     search_block_id NUMERIC(14) NULL,
@@ -735,6 +742,14 @@ store._ddl['configvar'],
     tx_size       NUMERIC(10)
 )""",
 
+# Fruit
+"""CREATE TABLE frt (
+    frt_id  NUMERIC(26) NOT NULL PRIMARY KEY,
+    frt_hash    BINARY(32) UNIQUE NOT NULL,
+    frt_hashPrevEpisode BINARY(32),
+    frt_scriptPubKey VARBINARY(""" + str(MAX_SCRIPT) + """)
+)""",
+
 # Mempool TX not linked to any block, we must track them somewhere
 # for efficient cleanup
 """CREATE TABLE unlinked_tx (
@@ -757,6 +772,20 @@ store._ddl['configvar'],
         REFERENCES tx (tx_id)
 )""",
 """CREATE INDEX x_block_tx_tx ON block_tx (tx_id)""",
+
+# Presence of fruits in blocks is many-to-many.
+"""CREATE TABLE block_frt (
+    block_id    NUMERIC(14) NOT NULL,
+    frt_id  NUMERIC(26) NOT NULL,
+    frt_pos NUMERIC(10) NOT NULL,
+    PRIMARY KEY (block_id, frt_id),
+    UNIQUE (block_id, frt_pos),
+    FOREIGN KEY (block_id)
+        REFERENCES block (block_id),
+    FOREIGN KEY (frt_id)
+        REFERENCES frt (frt_id)
+)
+""",
 
 # A public key for sending bitcoins.  PUBKEY_HASH is derivable from a
 # Bitcoin or Testnet address.
@@ -841,7 +870,7 @@ store._ddl['txout_approx'],
                 raise
 
         for key in ['chain', 'datadir',
-                    'tx', 'txout', 'pubkey', 'txin', 'block']:
+                    'tx', 'txout', 'pubkey', 'txin', 'block', 'frt']:
             store.create_sequence(key)
 
         store.sql("INSERT INTO abe_lock (lock_id) VALUES (1)")
@@ -1062,15 +1091,15 @@ store._ddl['txout_approx'],
                     tx['hash'] = chain.transaction_hash(tx['__data__'])
 
             tx_hash_array.append(tx['hash'])
-            tx['tx_id'] = store.tx_find_id_and_value(tx, pos == 0)
+            tx['tx_id'] = store.tx_find_id_and_value(tx, pos == -1)
 
             if tx['tx_id']:
                 all_txins_linked = False
             else:
                 if store.commit_bytes == 0:
-                    tx['tx_id'] = store.import_and_commit_tx(tx, pos == 0, chain)
+                    tx['tx_id'] = store.import_and_commit_tx(tx, pos == -1, chain)
                 else:
-                    tx['tx_id'] = store.import_tx(tx, pos == 0, chain)
+                    tx['tx_id'] = store.import_tx(tx, pos == -1, chain)
                 if tx.get('unlinked_count', 1) > 0:
                     all_txins_linked = False
 
@@ -1081,12 +1110,31 @@ store._ddl['txout_approx'],
             b['value_out'] += tx['value_out']
             b['value_destroyed'] += tx['value_destroyed']
 
+        for pos in xrange(len(b['fruits'])) :
+            frt = b['fruits'][pos]
+
+            if 'hash' not in frt :
+                frt['hash'] = util.double_sha256(frt['__header__'])
+
+            frt['frt_id'] = store.frt_find_id_and_value(frt)
+
+            if not frt['frt_id'] :
+                if store.commit_bytes == 0 :
+                    frt['frt_id'] = store.import_and_commit_frt(frt, chain)
+                else :
+                    frt['frt_id'] = store.import_frt(frt, chain)
+
+
+        store.log.debug("tx size: " + str(len(tx_hash_array)))
+        store.log.debug("hashPrev: " + str(b['hashPrev'][::-1]).encode('hex'))
+        store.log.debug("hashMerkelRoot: " + str(b['hashMerkleRoot'][::-1]).encode('hex'))
         # Get a new block ID.
         block_id = int(store.new_id("block"))
         b['block_id'] = block_id
 
         if chain is not None:
             # Verify Merkle root.
+            store.log.debug("merkle_root: " + str(chain.merkle_root(tx_hash_array)[::-1]).encode('hex'))
             if b['hashMerkleRoot'] != chain.merkle_root(tx_hash_array):
                 raise MerkleRootMismatch(b['hash'], tx_hash_array)
 
@@ -1137,24 +1185,34 @@ store._ddl['txout_approx'],
         try:
             store.sql(
                 """INSERT INTO block (
-                    block_id, block_hash, block_version, block_hashMerkleRoot,
-                    block_nTime, block_nBits, block_nNonce, block_height,
+                    block_id, block_hash, block_version,
+                    block_hashPrevEpisode,
+                    block_hashMerkleRoot,
+                    block_hashFruits,
+                    block_nTime, block_nBits, block_nNonce,
+                    block_scriptPubKey,
+                    block_height,
                     prev_block_id, block_chain_work, block_value_in,
                     block_value_out, block_total_satoshis,
                     block_total_seconds, block_total_ss, block_num_tx,
                     search_block_id
                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )""",
                 (block_id, store.hashin(b['hash']), store.intin(b['version']),
-                 store.hashin(b['hashMerkleRoot']), store.intin(b['nTime']),
+                    store.hashin(b['hashPrevEpisode']),
+                 store.hashin(b['hashMerkleRoot']),
+                 store.hashin(b['hashFruits']),
+                 store.intin(b['nTime']),
                  store.intin(b['nBits']), store.intin(b['nNonce']),
+                 store.binin(b['scriptPubKey']),
                  b['height'], prev_block_id,
                  store.binin_int(b['chain_work'], WORK_BITS),
                  store.intin(b['value_in']), store.intin(b['value_out']),
                  store.intin(b['satoshis']), store.intin(b['seconds']),
                  store.intin(b['total_ss']),
                  len(b['transactions']), b['search_block_id']))
+            store.log.debug('block store suc: ' + str(b['hash'][::-1]).encode('hex'))
 
         except store.dbmodule.DatabaseError:
 
@@ -1191,6 +1249,16 @@ store._ddl['txout_approx'],
                 VALUES (?, ?, ?)""",
                       (block_id, tx['tx_id'], tx_pos))
             store.log.info("block_tx %d %d", block_id, tx['tx_id'])
+
+        for frt_pos in xrange(len(b['fruits'])) :
+            frt = b['fruits'][frt_pos]
+            #store.sql("DELETE FROM unlinked_frt WHERE frt_id = ?", (frt["frt_id"],))
+            store.sql("""
+                INSERT INTO block_frt
+                    (block_id, frt_id, frt_pos)
+                VALUES (?, ?, ?)""",
+                    (block_id, frt['frt_id'], frt_pos))
+            store.log.info("block_frt %d %d", block_id, frt['frt_id'])
 
         if b['height'] is not None:
             store._populate_block_txin(block_id)
@@ -1531,13 +1599,16 @@ store._ddl['txout_approx'],
         * fees
         * generated
         * hash
+        * hashPrevEpisode
         * hashMerkleRoot
+        * hashFruits
         * hashPrev
         * height
         * nBits
         * next_block_hashes
         * nNonce
         * nTime
+        * scriptPubKey
         * satoshis_destroyed
         * satoshi_seconds
         * transactions[]
@@ -1552,6 +1623,10 @@ store._ddl['txout_approx'],
                 * binaddr
                 * value
             * size
+        * fruits[]
+            * hash
+            * hashPrevEpisode
+            * scriptPubKey
         * value_out
         * version
 
@@ -1591,10 +1666,13 @@ store._ddl['txout_approx'],
                 block_id,
                 block_hash,
                 block_version,
+                block_hashPrevEpisode,
                 block_hashMerkleRoot,
+                block_hashFruits,
                 block_nTime,
                 block_nBits,
                 block_nNonce,
+                block_scriptPubKey,
                 block_height,
                 prev_block_hash,
                 block_chain_work,
@@ -1633,20 +1711,29 @@ store._ddl['txout_approx'],
                 # Should not normally get here.
                 found_chain = store.get_default_chain()
 
-        (block_id, block_hash, block_version, hashMerkleRoot,
-         nTime, nBits, nNonce, height,
+        (block_id, block_hash, block_version,
+        block_hashPrevEpisode,
+        hashMerkleRoot,
+        block_hashFruits,
+         nTime, nBits, nNonce,
+         block_scriptPubKey,
+         height,
          prev_block_hash, block_chain_work, value_in, value_out,
          satoshis, seconds, ss, total_ss, destroyed, num_tx) = (
             row[0], store.hashout_hex(row[1]), row[2],
-            store.hashout_hex(row[3]), row[4], int(row[5]), row[6],
-            row[7], store.hashout_hex(row[8]),
-            store.binout_int(row[9]), int(row[10]), int(row[11]),
-            None if row[12] is None else int(row[12]),
-            None if row[13] is None else int(row[13]),
-            None if row[14] is None else int(row[14]),
+            store.hashout_hex(row[3]),
+            store.hashout_hex(row[4]),
+            store.hashout_hex(row[5]),
+            row[6], int(row[7]), row[8],
+            store.binout(row[9]),
+            row[10], store.hashout_hex(row[11]),
+            store.binout_int(row[12]), int(row[13]), int(row[14]),
             None if row[15] is None else int(row[15]),
             None if row[16] is None else int(row[16]),
-            int(row[17]),
+            None if row[17] is None else int(row[17]),
+            None if row[18] is None else int(row[18]),
+            None if row[19] is None else int(row[19]),
+            int(row[20]),
             )
 
         next_hashes = [
@@ -1659,6 +1746,28 @@ store._ddl['txout_approx'],
              WHERE bn.block_id = ?
              ORDER BY cc.in_longest DESC""",
                             (block_id,)) ]
+
+        frts = []
+        for row in store.selectall("""
+            SELECT frt_id
+            FROM block_frt
+            WHERE block_id = ?
+            ORDER BY frt_pos
+        """, (block_id, )) :
+            frt_id = row[0]
+            rrow = store.selectrow("""
+                SELECT *
+                FROM frt
+                WHERE frt_id = ?
+            """, (frt_id, ))
+            frt_id, frt_hash, frt_hashPrevEpisode, frt_scriptPubKey = (
+                rrow[0], rrow[1], rrow[2], store.binout(rrow[3])
+            )
+            frts.append({
+                "hash": store.hashout_hex(frt_hash),
+                "hashPrevEpisode": store.hashout_hex(frt_hashPrevEpisode),
+                "scriptPubKey": frt_scriptPubKey
+            })
 
         tx_ids = []
         txs = {}
@@ -1725,9 +1834,9 @@ store._ddl['txout_approx'],
             tx['in'].append(txin)
 
         generated = block_out - block_in
-        coinbase_tx = txs[tx_ids[0]]
-        coinbase_tx['fees'] = 0
-        block_fees = coinbase_tx['total_out'] - generated
+        #coinbase_tx = txs[tx_ids[0]]
+        #coinbase_tx['fees'] = 0
+        block_fees = 0#coinbase_tx['total_out'] - generated
 
         b = {
             'chain_candidates':      cc,
@@ -1737,19 +1846,25 @@ store._ddl['txout_approx'],
             'fees':                  block_fees,
             'generated':             generated,
             'hash':                  block_hash,
+            'hashPrevEpisode':     block_hashPrevEpisode,
             'hashMerkleRoot':        hashMerkleRoot,
+            'hashFruits':            block_hashFruits,
             'hashPrev':              prev_block_hash,
             'height':                height,
             'nBits':                 nBits,
             'next_block_hashes':     next_hashes,
             'nNonce':                nNonce,
+            'scriptPubKey':         block_scriptPubKey,
             'nTime':                 nTime,
             'satoshis_destroyed':    destroyed,
             'satoshi_seconds':       ss,
             'transactions':          [txs[tx_id] for tx_id in tx_ids],
+            'fruits': frts,
             'value_out':             block_out,
             'version':               block_version,
             }
+
+        store.log.debug(str(b['fruits']))
 
         is_stake_chain = chain is not None and chain.has_feature('nvc_proof_of_stake')
         if is_stake_chain:
@@ -1757,7 +1872,7 @@ store._ddl['txout_approx'],
             # http://nvc.cryptocoinexplorer.com.
             b['is_proof_of_stake'] = len(tx_ids) > 1 and coinbase_tx['total_out'] == 0
 
-        for tx_id in tx_ids[1:]:
+        for tx_id in tx_ids:
             tx = txs[tx_id]
             tx['fees'] = tx['total_in'] - tx['total_out']
 
@@ -1767,6 +1882,17 @@ store._ddl['txout_approx'],
             b['fees'] += b['proof_of_stake_generated']
 
         return b
+
+    def frt_find_id_and_value(store, frt) :
+        row = store.selectrow("""
+            SELECT frt.frt_id
+            FROM frt
+            WHERE frt_hash = ?""",
+            (store.hashin(frt['hash']),))
+        if row :
+            return row[0]
+        else :
+            return None
 
     def tx_find_id_and_value(store, tx, is_coinbase, check_only=False):
         # Attention: value_out/undestroyed much match what is calculated in
@@ -1802,6 +1928,17 @@ store._ddl['txout_approx'],
             return tx_id
 
         return None
+
+    def import_frt(store, frt, chain) :
+        frt_id = store.new_id("frt")
+        dbhash = store.hashin(frt['hash'])
+
+        store.sql("""
+            INSERT INTO frt (frt_id, frt_hash, frt_hashPrevEpisode, frt_scriptPubKey)
+            VALUES (?, ?, ?, ?)""",
+                (frt_id, dbhash, store.hashin(frt['hashPrevEpisode']), store.binin(frt['scriptPubKey'])))
+
+        return frt_id
 
     def import_tx(store, tx, is_coinbase, chain):
         tx_id = store.new_id("tx")
@@ -1893,6 +2030,19 @@ store._ddl['txout_approx'],
         # or leave that to an offline process.  Nothing in this program
         # requires them.
         return tx_id
+
+    def import_and_commit_frt(store, frt, chain) :
+        try :
+            frt_id = store.import_frt(frt, chain)
+            store.commit()
+
+        except store.dbmodule.DatabaseError :
+            store.rollback()
+            frt_id = store.frt_find_id_and_value(frt)
+            if not frt_id :
+                raise
+
+        return frt_id
 
     def import_and_commit_tx(store, tx, is_coinbase, chain):
         try:
@@ -2928,6 +3078,7 @@ store._ddl['txout_approx'],
             # Assume blocks obey the respective policy if they get here.
             chain_id = dircfg['chain_id']
             chain = store.chains_by.id.get(chain_id, None)
+            store.log.debug("chain: " + str(chain_id) + " " + str(chain))
 
             if chain is None:
                 chain = store.chains_by.magic.get(magic, None)
@@ -2969,8 +3120,10 @@ store._ddl['txout_approx'],
                 ds.read_cursor = offset
                 break
             end = ds.read_cursor + length
+            store.log.debug('block length: ' + str(length) + '/' + str(len(ds.input)))
 
             hash = chain.ds_block_header_hash(ds)
+            store.log.debug("block header hash: " + str(hash)[::-1].encode('hex'))
 
             # XXX should decode target and check hash against it to
             # avoid loading garbage data.  But not for merged-mined or
@@ -2980,6 +3133,7 @@ store._ddl['txout_approx'],
             if not store.offer_existing_block(hash, chain.id):
                 b = chain.ds_parse_block(ds)
                 b["hash"] = hash
+                store.log.debug("hashprev: " + str(b['hashPrev'])[::-1].encode('hex') + " and " + str(chain.genesis_hash_prev).encode('hex'))
 
                 if (store.log.isEnabledFor(logging.DEBUG) and b["hashPrev"] == chain.genesis_hash_prev):
                     try:

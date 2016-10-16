@@ -6,12 +6,12 @@
 # it under the terms of the GNU Affero General Public License as
 # published by the Free Software Foundation, either version 3 of the
 # License, or (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful, but
 # WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 # Affero General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU Affero General Public
 # License along with this program.  If not, see
 # <http://www.gnu.org/licenses/agpl.html>.
@@ -67,8 +67,22 @@ def mixup_blocks(store, ds, count, datadir_chain = None, seed = None):
         # considerable changes.
         end = ds.read_cursor + length
 
-        hash = util.double_sha256(
-            ds.input[ds.read_cursor : ds.read_cursor + 80])
+
+        header_start = ds.read_cursor
+        ds.read_int32()
+        ds.read_bytes(32)
+        ds.read_bytes(32)
+        ds.read_bytes(32)
+        ds.read_bytes(32)
+        ds.read_uint32()
+        ds.read_uint32()
+        ds.read_uint32()
+        ds.read_bytes(ds.read_compact_size())
+        header_end = ds.read_cursor
+        content = ds.input[header_start:header_end]
+        ds.read_cursor = header_start
+
+        hash = util.double_sha256(content)
         # XXX should decode target and check hash against it to
         # avoid loading garbage data.  But not for merged-mined or
         # CPU-mined chains that use different proof-of-work

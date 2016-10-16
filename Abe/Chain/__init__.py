@@ -4,12 +4,12 @@
 # it under the terms of the GNU Affero General Public License as
 # published by the Free Software Foundation, either version 3 of the
 # License, or (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful, but
 # WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 # Affero General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU Affero General Public
 # License along with this program.  If not, see
 # <http://www.gnu.org/licenses/agpl.html>.
@@ -80,6 +80,11 @@ class BaseChain(object):
         nTransactions = ds.read_compact_size()
         for i in xrange(nTransactions):
             d['transactions'].append(chain.ds_parse_transaction(ds))
+        d['fruits'] = []
+        nFruits = ds.read_compact_size()
+        for i in xrange(nFruits) :
+            d['fruits'].append(chain.ds_parse_block_header(ds))
+
         return d
 
     def ds_serialize_block(chain, ds, block):
@@ -87,14 +92,20 @@ class BaseChain(object):
         ds.write_compact_size(len(block['transactions']))
         for tx in block['transactions']:
             chain.ds_serialize_transaction(ds, tx)
+        ds.write_compact_size(len(block['fruits']))
+        for tx in block['fruits'] :
+            chain.ds_serialize_block_header(ds, tx)
 
     def ds_serialize_block_header(chain, ds, block):
         ds.write_int32(block['version'])
         ds.write(block['hashPrev'])
+        ds.write(block['hashPrevEpisode'])
         ds.write(block['hashMerkleRoot'])
+        ds.write(block['hashFruits'])
         ds.write_uint32(block['nTime'])
         ds.write_uint32(block['nBits'])
         ds.write_uint32(block['nNonce'])
+        ds.write_string(block['scriptPubKey'])
 
     def ds_serialize_transaction(chain, ds, tx):
         ds.write_int32(tx['version'])
@@ -132,8 +143,20 @@ class BaseChain(object):
         return ds.input
 
     def ds_block_header_hash(chain, ds):
-        return chain.block_header_hash(
-            ds.input[ds.read_cursor : ds.read_cursor + 80])
+        header_start = ds.read_cursor
+        ds.read_int32()
+        ds.read_bytes(32)
+        ds.read_bytes(32)
+        ds.read_bytes(32)
+        ds.read_bytes(32)
+        ds.read_uint32()
+        ds.read_uint32()
+        ds.read_uint32()
+        ds.read_bytes(ds.read_compact_size())
+        header_end = ds.read_cursor
+        content = ds.input[header_start:header_end]
+        ds.read_cursor = header_start
+        return chain.block_header_hash(content)
 
     def transaction_hash(chain, binary_tx):
         return util.double_sha256(binary_tx)
@@ -143,6 +166,8 @@ class BaseChain(object):
 
     # Based on CBlock::BuildMerkleTree().
     def merkle_root(chain, hashes):
+        if len(hashes) == 0 :
+            hashes.append("\0" * 32)
         while len(hashes) > 1:
             size = len(hashes)
             out = []
