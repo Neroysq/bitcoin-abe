@@ -635,7 +635,9 @@ class Abe:
             else :
                 is_generation = False
 
-            body += ['<tr><td><a href="../tx/' + tx['hash'] + '">',
+            body += ['<tr><td>',
+                    '<strong><font color="read">G </font></strong>' if is_generation else '',
+                    '<a href="../tx/' + tx['hash'] + '">',
                      tx['hash'][:10], '...</a>'
                      '</td><td>', format_satoshis(tx['fees'], chain),
                      '</td><td>', tx['size'] / 1000.0,

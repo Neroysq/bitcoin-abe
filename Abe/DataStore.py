@@ -2000,10 +2000,16 @@ store._ddl['txout_approx'],
             store._export_scriptPubKey(txin, found_chain, scriptPubKey)
             tx['in'].append(txin)
 
-        generated = block_out - block_in
+        generated = 0
+        #generated = block_out - block_in
         #coinbase_tx = txs[tx_ids[0]]
         #coinbase_tx['fees'] = 0
-        block_fees = 0#coinbase_tx['total_out'] - generated
+        block_fees = block_in - block_out#coinbase_tx['total_out'] - generated
+        for i in txs :
+            tx = txs[i]
+            if tx['total_in'] == 0 :
+                block_fees += tx['total_out']
+                generated += tx['total_out']
 
         b = {
             'chain_candidates':      cc,
@@ -2041,7 +2047,7 @@ store._ddl['txout_approx'],
 
         for tx_id in tx_ids:
             tx = txs[tx_id]
-            tx['fees'] = tx['total_in'] - tx['total_out']
+            tx['fees'] = tx['total_in'] - tx['total_out'] if tx['total_in'] > 0 else 0
 
         if is_stake_chain and b['is_proof_of_stake']:
             b['proof_of_stake_generated'] = -txs[tx_ids[1]]['fees']
