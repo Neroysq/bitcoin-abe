@@ -630,6 +630,11 @@ class Abe:
                  '</tr>\n']
 
         for tx in b['transactions']:
+            if tx['total_in'] == 0 :
+                is_generation = True
+            else :
+                is_generation = False
+
             body += ['<tr><td><a href="../tx/' + tx['hash'] + '">',
                      tx['hash'][:10], '...</a>'
                      '</td><td>', format_satoshis(tx['fees'], chain),

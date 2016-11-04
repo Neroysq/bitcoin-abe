@@ -1156,6 +1156,158 @@ store._ddl['txout_approx'],
         b['height'] = None if prev_height is None else prev_height + 1
         b['chain_work'] = util.calculate_work(prev_work, b['nBits'])
 
+        FRUIT_PERIOD_LENGTH = 6
+        nSubsidyHalvingInterval = 210000
+        COIN = 100000000
+        FEE_FRACTION_C1_NUMERATOR = 1
+        FEE_FRACTION_C1_DENOMINATOR = 10
+
+        REWARD_DIFF_FRACTION_C3_NUMERATOR = 1
+        REWARD_DIFF_FRACTION_C3_DENOMINATOR = 100
+
+        REWARD_CREATE_FRACTION_C2_NUMERATOR = 1
+        REWARD_CREATE_FRACTION_C2_DENOMINATOR = 10
+
+        generation_tx = []
+        if (not is_genesis and b['height'] % FRUIT_PERIOD_LENGTH == 0) :
+            store.log.info('reward distr calc: %d', b['height'])
+
+            def GetBlockSubsidy(n) :
+                halvings = n / nSubsidyHalvingInterval
+                if halvings >= 64 :
+                    return 0
+                nSubsidy = 50 * COIN
+                nSubsidy >>= halvings
+                return nSubsidy
+
+            block_creators = {}
+            reward_distr = {}
+            fruit_creator = {}
+            f = {}
+            F = 0
+            S = 0
+            rest = 0
+            nblock_id = block_id
+            preblock_id = None
+            for i in xrange(FRUIT_PERIOD_LENGTH - 1, -1, -1) :
+                if nblock_id == block_id :
+                    preblock_id, nvalue_in, nvalue_out = b['prev_block_id'], b['value_in'], b['value_out']
+                    frts = b['fruits']
+                    block_creator = b['scriptPubKey']
+                else :
+                    row = store.selectrow("""
+                        SELECT block_scriptPubKey, prev_block_id, block_value_in, block_value_out
+                        FROM block
+                        WHERE block_id=?""", (nblock_id, ))
+                    (block_creator, preblock_id, nvalue_in, nvalue_out) = (store.binout(row[0]), row[1], int(row[2]), int(row[3]))
+                    rows = store.selectall("""
+                        SELECT frt_id
+                        FROM block_frt
+                        WHERE block_id=?
+                        ORDER BY frt_pos""", (nblock_id, ))
+                    frts = []
+                    for row in rows :
+                        frt = store.selectrow("""
+                            SELECT frt_scriptPubKey
+                            FROM frt
+                            WHERE frt_id=?""", (row[0], ))
+                        frts.append({"scriptPubKey": store.binout(frt[0])})
+                f[i] = len(frts) + 1
+                #store.log.info('Looking at %d: %d %s frts: %d', i, nblock_id, store.binout_hex(block_creator).encode('hex'), f[i])
+                vfc = [block_creator]
+                for frt in frts :
+                    creator = frt['scriptPubKey']
+                    #store.log.info('frt: %s', store.binout_hex(creator).encode('hex'))
+                    vfc.append(creator)
+
+                fruit_creator[i] = vfc
+
+                block_creators[i] = block_creator
+                fee = nvalue_in - nvalue_out
+                F += f[i]
+                tmp = fee + GetBlockSubsidy(b['height'] - (FRUIT_PERIOD_LENGTH - i - 1))
+                reward_creator = tmp * FEE_FRACTION_C1_NUMERATOR / FEE_FRACTION_C1_DENOMINATOR
+                S += tmp - reward_creator
+                rest += tmp - reward_creator
+
+                if block_creator not in reward_distr :
+                    reward_distr[block_creator] = reward_creator
+                else :
+                    reward_distr[block_creator] += reward_creator
+
+                nblock_id = preblock_id
+
+            for i in xrange(FRUIT_PERIOD_LENGTH) :
+                reward_per_fruit_cr = (S * (REWARD_CREATE_FRACTION_C2_DENOMINATOR * (FRUIT_PERIOD_LENGTH * REWARD_DIFF_FRACTION_C3_DENOMINATOR + (FRUIT_PERIOD_LENGTH - (i + 1)) * REWARD_DIFF_FRACTION_C3_NUMERATOR) - REWARD_CREATE_FRACTION_C2_NUMERATOR * (FRUIT_PERIOD_LENGTH) * REWARD_DIFF_FRACTION_C3_DENOMINATOR)) / (F * (FRUIT_PERIOD_LENGTH) * REWARD_CREATE_FRACTION_C2_DENOMINATOR * REWARD_DIFF_FRACTION_C3_DENOMINATOR)
+
+                reward_per_fruit_co = S / F - reward_per_fruit_cr
+                store.log.info('%d: %d %d', i, reward_per_fruit_cr, reward_per_fruit_co)
+                reward_distr[block_creators[i]] += reward_per_fruit_co * f[i]
+                rest -= reward_per_fruit_co * f[i]
+
+                for creator in fruit_creator[i] :
+                    if creator not in reward_distr :
+                        reward_distr[creator] = 0
+                    reward_distr[creator] += reward_per_fruit_cr
+                    rest -= reward_per_fruit_cr
+
+            if rest != 0 :
+                reward_distr[block_creators[0]] += rest
+
+            def GetScript(n) :
+                ret = ''
+                if n >= 1 and n <= 16 :
+                    k = n + (0x51 - 1)
+                    ret += chr(k)
+                elif n == 0 :
+                    k = 0
+                    ret += chr(k)
+                else :
+                    a = []
+                    while n > 0 :
+                        k = n & 0xff
+                        a.append(chr(k))
+                        n >>= 8
+                    k = len(a)
+                    ret += chr(k)
+                    for k in a :
+                        ret += k
+                ret += '\x00'
+                return ret
+
+            #tmpds = BCDataStream.BCDataStream()
+            nTx = {
+                'version': 1,
+                'txIn': [],
+                'txOut': [],
+                'lockTime': 0
+            }
+            nTx['txIn'].append({
+                'prevout_hash': '\x00'*32,
+                'prevout_n': (1 << 32) - 1,
+                'scriptSig': GetScript(b['height']),
+                'sequence': 0xffffffff
+            })
+
+            q = reward_distr.items()
+            def compare(x, y) :
+                #store.log.info('%s\n%s\n%d', store.binout_hex(x[0]).encode('hex'), store.binout_hex(y[0]).encode('hex'), store.binout_hex(x[0]).encode('hex') < store.binout_hex(y[0]).encode('hex'))
+                if store.binout_hex(x[0]) < store.binout_hex(y[0]) :
+                    return -1
+                return 1
+            q = sorted(q, cmp=compare)#lambda x, y: store.binout_hex(x[0]).encode('hex') < store.binout_hex(y[0]).encode('hex'))
+            for (receiver, reward) in q :
+                nTx['txOut'].append({
+                    'value': reward,
+                    'scriptPubKey': receiver
+                })
+
+            #store.log.info(str(nTx['txOut']))
+            nTx['__data__'] = chain.serialize_transaction(nTx)
+            #store.log.info('rawtransaction %s', store.binout_hex(nTx['__data__']).encode('hex'))
+            nTx['hash'] = util.double_sha256(nTx['__data__'])
+            generation_tx.append(nTx)
+
         if prev_seconds is None:
             b['seconds'] = None
         else:
@@ -1250,6 +1402,19 @@ store._ddl['txout_approx'],
                       (block_id, tx['tx_id'], tx_pos))
             store.log.info("block_tx %d %d", block_id, tx['tx_id'])
 
+        for tx in generation_tx:
+            if store.commit_bytes == 0:
+                tx['tx_id'] = store.import_and_commit_tx(tx, True, chain)
+            else:
+                tx['tx_id'] = store.import_tx(tx, True, chain)
+            store.sql("""
+                INSERT INTO block_tx
+                    (block_id, tx_id, tx_pos)
+                    VALUES (?, ?, ?)
+            """, (block_id, tx['tx_id'], -1))
+
+            store.log.info("generation tx %d %d %s\n%s", block_id, tx['tx_id'], str(tx['hash'][::-1]).encode('hex'), str(tx))
+
         for frt_pos in xrange(len(b['fruits'])) :
             frt = b['fruits'][frt_pos]
             #store.sql("DELETE FROM unlinked_frt WHERE frt_id = ?", (frt["frt_id"],))
@@ -1258,7 +1423,7 @@ store._ddl['txout_approx'],
                     (block_id, frt_id, frt_pos)
                 VALUES (?, ?, ?)""",
                     (block_id, frt['frt_id'], frt_pos))
-            store.log.info("block_frt %d %d", block_id, frt['frt_id'])
+            #store.log.info("block_frt %d %d %s", block_id, frt['frt_id'], frt['scriptPubKey'].encode('hex'))
 
         if b['height'] is not None:
             store._populate_block_txin(block_id)
@@ -2999,6 +3164,7 @@ store._ddl['txout_approx'],
         except IOError, e:
             store.log.warning("Skipping datadir %s: %s", dircfg['dirname'], e)
             return
+
 
         while True:
             dircfg['blkfile_number'] = blkfile['number']

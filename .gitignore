@@ -1,3 +1,4 @@
+reset.sh
 *.pyc
 abe.sqlite*
 tmpd
