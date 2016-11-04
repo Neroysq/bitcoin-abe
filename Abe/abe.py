@@ -515,8 +515,11 @@ class Abe:
             else:
                 percent_destroyed = '%5g%%' % (100.0 - (100.0 * ss / total_ss))
 
+            FRUIT_PERIOD_LENGTH = 6 #TODO
             body += [
-                '<tr><td><a href="', page['dotdot'], 'block/',
+                '<tr><td>',
+                '<strong><font color="red">G </font></strong>' if height % FRUIT_PERIOD_LENGTH == 0 else '',
+                '<a href="', page['dotdot'], 'block/',
                 abe.store.hashout_hex(hash),
                 '">', height, '</a>'
                 '</td><td>', format_time(int(nTime)),
@@ -636,7 +639,7 @@ class Abe:
                 is_generation = False
 
             body += ['<tr><td>',
-                    '<strong><font color="read">G </font></strong>' if is_generation else '',
+                    '<strong><font color="red">G </font></strong>' if is_generation else '',
                     '<a href="../tx/' + tx['hash'] + '">',
                      tx['hash'][:10], '...</a>'
                      '</td><td>', format_satoshis(tx['fees'], chain),
