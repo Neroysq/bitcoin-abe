@@ -1238,7 +1238,7 @@ store._ddl['txout_approx'],
                 nblock_id = preblock_id
 
             for i in xrange(FRUIT_PERIOD_LENGTH) :
-                reward_per_fruit_cr = (S * (REWARD_CREATE_FRACTION_C2_DENOMINATOR * (FRUIT_PERIOD_LENGTH * REWARD_DIFF_FRACTION_C3_DENOMINATOR + (FRUIT_PERIOD_LENGTH - (i + 1)) * REWARD_DIFF_FRACTION_C3_NUMERATOR) - REWARD_CREATE_FRACTION_C2_NUMERATOR * (FRUIT_PERIOD_LENGTH) * REWARD_DIFF_FRACTION_C3_DENOMINATOR)) / (F * (FRUIT_PERIOD_LENGTH) * REWARD_CREATE_FRACTION_C2_DENOMINATOR * REWARD_DIFF_FRACTION_C3_DENOMINATOR)
+                reward_per_fruit_cr = (S * (REWARD_CREATE_FRACTION_C2_DENOMINATOR * (FRUIT_PERIOD_LENGTH * REWARD_DIFF_FRACTION_C3_DENOMINATOR + (FRUIT_PERIOD_LENGTH - (i)) * REWARD_DIFF_FRACTION_C3_NUMERATOR) - REWARD_CREATE_FRACTION_C2_NUMERATOR * (FRUIT_PERIOD_LENGTH) * REWARD_DIFF_FRACTION_C3_DENOMINATOR)) / (F * (FRUIT_PERIOD_LENGTH) * REWARD_CREATE_FRACTION_C2_DENOMINATOR * REWARD_DIFF_FRACTION_C3_DENOMINATOR)
 
                 reward_per_fruit_co = S / F - reward_per_fruit_cr
                 store.log.info('%d: %d %d', i, reward_per_fruit_cr, reward_per_fruit_co)
@@ -1938,6 +1938,8 @@ store._ddl['txout_approx'],
         txs = {}
         block_out = 0
         block_in = 0
+        generation_in = 0
+        generation_out = 0
 
         for row in store.selectall("""
             SELECT tx_id, tx_hash, tx_size, txout_value, txout_scriptPubKey
