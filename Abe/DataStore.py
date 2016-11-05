@@ -1169,7 +1169,7 @@ store._ddl['txout_approx'],
         REWARD_CREATE_FRACTION_C2_DENOMINATOR = 10
 
         generation_tx = []
-        if (not is_genesis and b['height'] % FRUIT_PERIOD_LENGTH == 0) :
+        if (b['height'] != None and not is_genesis and b['height'] % FRUIT_PERIOD_LENGTH == 0) :
             store.log.info('reward distr calc: %d', b['height'])
 
             def GetBlockSubsidy(n) :
@@ -2010,6 +2010,7 @@ store._ddl['txout_approx'],
             if tx['total_in'] == 0 :
                 block_fees += tx['total_out']
                 generated += tx['total_out']
+
 
         b = {
             'chain_candidates':      cc,
