@@ -1064,98 +1064,7 @@ store._ddl['txout_approx'],
                 None if total_ss is None else int(total_ss),
                 int(nTime))
 
-    def import_block(store, b, chain_ids=None, chain=None):
-
-        # Import new transactions.
-
-        if chain_ids is None:
-            chain_ids = frozenset() if chain is None else frozenset([chain.id])
-
-        b['value_in'] = 0
-        b['value_out'] = 0
-        b['value_destroyed'] = 0
-        tx_hash_array = []
-
-        # In the common case, all the block's txins _are_ linked, and we
-        # can avoid a query if we notice this.
-        all_txins_linked = True
-
-        for pos in xrange(len(b['transactions'])):
-            tx = b['transactions'][pos]
-
-            if 'hash' not in tx:
-                if chain is None:
-                    store.log.debug("Falling back to SHA256 transaction hash")
-                    tx['hash'] = util.double_sha256(tx['__data__'])
-                else:
-                    tx['hash'] = chain.transaction_hash(tx['__data__'])
-
-            tx_hash_array.append(tx['hash'])
-            tx['tx_id'] = store.tx_find_id_and_value(tx, pos == -1)
-
-            if tx['tx_id']:
-                all_txins_linked = False
-            else:
-                if store.commit_bytes == 0:
-                    tx['tx_id'] = store.import_and_commit_tx(tx, pos == -1, chain)
-                else:
-                    tx['tx_id'] = store.import_tx(tx, pos == -1, chain)
-                if tx.get('unlinked_count', 1) > 0:
-                    all_txins_linked = False
-
-            if tx['value_in'] is None:
-                b['value_in'] = None
-            elif b['value_in'] is not None:
-                b['value_in'] += tx['value_in']
-            b['value_out'] += tx['value_out']
-            b['value_destroyed'] += tx['value_destroyed']
-
-        for pos in xrange(len(b['fruits'])) :
-            frt = b['fruits'][pos]
-
-            if 'hash' not in frt :
-                frt['hash'] = util.double_sha256(frt['__header__'])
-
-            frt['frt_id'] = store.frt_find_id_and_value(frt)
-
-            if not frt['frt_id'] :
-                if store.commit_bytes == 0 :
-                    frt['frt_id'] = store.import_and_commit_frt(frt, chain)
-                else :
-                    frt['frt_id'] = store.import_frt(frt, chain)
-
-
-        store.log.debug("tx size: " + str(len(tx_hash_array)))
-        store.log.debug("hashPrev: " + str(b['hashPrev'][::-1]).encode('hex'))
-        store.log.debug("hashMerkelRoot: " + str(b['hashMerkleRoot'][::-1]).encode('hex'))
-        # Get a new block ID.
-        block_id = int(store.new_id("block"))
-        b['block_id'] = block_id
-
-        if chain is not None:
-            # Verify Merkle root.
-            store.log.debug("merkle_root: " + str(chain.merkle_root(tx_hash_array)[::-1]).encode('hex'))
-            if b['hashMerkleRoot'] != chain.merkle_root(tx_hash_array):
-                raise MerkleRootMismatch(b['hash'], tx_hash_array)
-
-        # Look for the parent block.
-        hashPrev = b['hashPrev']
-        if chain is None:
-            # XXX No longer used.
-            is_genesis = hashPrev == util.GENESIS_HASH_PREV
-        else:
-            is_genesis = hashPrev == chain.genesis_hash_prev
-
-        (prev_block_id, prev_height, prev_work, prev_satoshis,
-         prev_seconds, prev_ss, prev_total_ss, prev_nTime) = (
-            (None, -1, 0, 0, 0, 0, 0, b['nTime'])
-            if is_genesis else
-            store.find_prev(hashPrev))
-
-        b['prev_block_id'] = prev_block_id
-        b['height'] = None if prev_height is None else prev_height + 1
-        b['chain_work'] = util.calculate_work(prev_work, b['nBits'])
-
+    def reward_distribution(store, b, is_genesis, block_id, chain) :
         FRUIT_PERIOD_LENGTH = 6
         nSubsidyHalvingInterval = 210000
         COIN = 100000000
@@ -1167,7 +1076,6 @@ store._ddl['txout_approx'],
 
         REWARD_CREATE_FRACTION_C2_NUMERATOR = 1
         REWARD_CREATE_FRACTION_C2_DENOMINATOR = 10
-
         generation_tx = []
         if (b['height'] != None and not is_genesis and b['height'] % FRUIT_PERIOD_LENGTH == 0) :
             store.log.info('reward distr calc: %d', b['height'])
@@ -1190,7 +1098,7 @@ store._ddl['txout_approx'],
             nblock_id = block_id
             preblock_id = None
             for i in xrange(FRUIT_PERIOD_LENGTH - 1, -1, -1) :
-                if nblock_id == block_id :
+                if nblock_id == block_id and ('prev_block_id' in b):
                     preblock_id, nvalue_in, nvalue_out = b['prev_block_id'], b['value_in'], b['value_out']
                     frts = b['fruits']
                     block_creator = b['scriptPubKey']
@@ -1308,6 +1216,113 @@ store._ddl['txout_approx'],
             nTx['hash'] = util.double_sha256(nTx['__data__'])
             generation_tx.append(nTx)
 
+        for tx in generation_tx:
+            if store.commit_bytes == 0:
+                tx['tx_id'] = store.import_and_commit_tx(tx, True, chain)
+            else:
+                tx['tx_id'] = store.import_tx(tx, True, chain)
+            store.sql("""
+                INSERT INTO block_tx
+                    (block_id, tx_id, tx_pos)
+                    VALUES (?, ?, ?)
+            """, (block_id, tx['tx_id'], -1))
+
+            store.log.info("generation tx %d %d %s\n%s", block_id, tx['tx_id'], str(tx['hash'][::-1]).encode('hex'), str(tx))
+
+
+    def import_block(store, b, chain_ids=None, chain=None):
+
+        # Import new transactions.
+
+        if chain_ids is None:
+            chain_ids = frozenset() if chain is None else frozenset([chain.id])
+
+        b['value_in'] = 0
+        b['value_out'] = 0
+        b['value_destroyed'] = 0
+        tx_hash_array = []
+
+        # In the common case, all the block's txins _are_ linked, and we
+        # can avoid a query if we notice this.
+        all_txins_linked = True
+
+        for pos in xrange(len(b['transactions'])):
+            tx = b['transactions'][pos]
+
+            if 'hash' not in tx:
+                if chain is None:
+                    store.log.debug("Falling back to SHA256 transaction hash")
+                    tx['hash'] = util.double_sha256(tx['__data__'])
+                else:
+                    tx['hash'] = chain.transaction_hash(tx['__data__'])
+
+            tx_hash_array.append(tx['hash'])
+            tx['tx_id'] = store.tx_find_id_and_value(tx, pos == -1)
+
+            if tx['tx_id']:
+                all_txins_linked = False
+            else:
+                if store.commit_bytes == 0:
+                    tx['tx_id'] = store.import_and_commit_tx(tx, pos == -1, chain)
+                else:
+                    tx['tx_id'] = store.import_tx(tx, pos == -1, chain)
+                if tx.get('unlinked_count', 1) > 0:
+                    all_txins_linked = False
+
+            if tx['value_in'] is None:
+                b['value_in'] = None
+            elif b['value_in'] is not None:
+                b['value_in'] += tx['value_in']
+            b['value_out'] += tx['value_out']
+            b['value_destroyed'] += tx['value_destroyed']
+
+        for pos in xrange(len(b['fruits'])) :
+            frt = b['fruits'][pos]
+
+            if 'hash' not in frt :
+                frt['hash'] = util.double_sha256(frt['__header__'])
+
+            frt['frt_id'] = store.frt_find_id_and_value(frt)
+
+            if not frt['frt_id'] :
+                if store.commit_bytes == 0 :
+                    frt['frt_id'] = store.import_and_commit_frt(frt, chain)
+                else :
+                    frt['frt_id'] = store.import_frt(frt, chain)
+
+
+        store.log.debug("tx size: " + str(len(tx_hash_array)))
+        store.log.debug("hashPrev: " + str(b['hashPrev'][::-1]).encode('hex'))
+        store.log.debug("hashMerkelRoot: " + str(b['hashMerkleRoot'][::-1]).encode('hex'))
+        # Get a new block ID.
+        block_id = int(store.new_id("block"))
+        b['block_id'] = block_id
+
+        if chain is not None:
+            # Verify Merkle root.
+            store.log.debug("merkle_root: " + str(chain.merkle_root(tx_hash_array)[::-1]).encode('hex'))
+            if b['hashMerkleRoot'] != chain.merkle_root(tx_hash_array):
+                raise MerkleRootMismatch(b['hash'], tx_hash_array)
+
+        # Look for the parent block.
+        hashPrev = b['hashPrev']
+        if chain is None:
+            # XXX No longer used.
+            is_genesis = hashPrev == util.GENESIS_HASH_PREV
+        else:
+            is_genesis = hashPrev == chain.genesis_hash_prev
+
+        (prev_block_id, prev_height, prev_work, prev_satoshis,
+         prev_seconds, prev_ss, prev_total_ss, prev_nTime) = (
+            (None, -1, 0, 0, 0, 0, 0, b['nTime'])
+            if is_genesis else
+            store.find_prev(hashPrev))
+
+        b['prev_block_id'] = prev_block_id
+        b['height'] = None if prev_height is None else prev_height + 1
+        b['chain_work'] = util.calculate_work(prev_work, b['nBits'])
+
+
         if prev_seconds is None:
             b['seconds'] = None
         else:
@@ -1391,6 +1406,9 @@ store._ddl['txout_approx'],
             # rewind a block file.  Let them deal with it.
             raise
 
+
+        store.reward_distribution(b, is_genesis, block_id, chain)
+
         # List the block's transactions in block_tx.
         for tx_pos in xrange(len(b['transactions'])):
             tx = b['transactions'][tx_pos]
@@ -1402,18 +1420,6 @@ store._ddl['txout_approx'],
                       (block_id, tx['tx_id'], tx_pos))
             store.log.info("block_tx %d %d", block_id, tx['tx_id'])
 
-        for tx in generation_tx:
-            if store.commit_bytes == 0:
-                tx['tx_id'] = store.import_and_commit_tx(tx, True, chain)
-            else:
-                tx['tx_id'] = store.import_tx(tx, True, chain)
-            store.sql("""
-                INSERT INTO block_tx
-                    (block_id, tx_id, tx_pos)
-                    VALUES (?, ?, ?)
-            """, (block_id, tx['tx_id'], -1))
-
-            store.log.info("generation tx %d %d %s\n%s", block_id, tx['tx_id'], str(tx['hash'][::-1]).encode('hex'), str(tx))
 
         for frt_pos in xrange(len(b['fruits'])) :
             frt = b['fruits'][frt_pos]
@@ -1691,6 +1697,9 @@ store._ddl['txout_approx'],
                               (store.intin(ss),
                                store.intin(destroyed),
                                next_id))
+
+                chain = store.chains_by.id[[x for x in chain_ids][0]]
+                store.reward_distribution(b, False, block_id, chain)
 
                 if store.use_firstbits:
                     for (addr_vers,) in store.selectall("""
