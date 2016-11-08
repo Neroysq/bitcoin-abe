@@ -676,7 +676,9 @@ class Abe:
                  '</tr>\n']
 
         for (idx, frt) in enumerate(b['fruits']):
+            is_ripe = (frt['hashPrevEpisode'] != b['hashPrevEpisode'])
             body += ['<tr><td>',
+                    '<strong><font color="green">R </font></strong>' if is_ripe else '',
                     idx,
                     '</td><td>', frt['hash'],
                      '</td><td>', frt['hashPrevEpisode'],
