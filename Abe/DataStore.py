@@ -1241,6 +1241,8 @@ store._ddl['txout_approx'],
                         k = n & 0xff
                         a.append(chr(k))
                         n >>= 8
+                    if a[-1] > chr(0x80) :
+                        a.append(chr(0))
                     k = len(a)
                     ret += chr(k)
                     for k in a :
@@ -1472,6 +1474,7 @@ store._ddl['txout_approx'],
             raise
 
 
+#        store.log.info('import reward')
         store.reward_distribution(b, is_genesis, block_id, chain)
 
         # List the block's transactions in block_tx.
@@ -1483,7 +1486,7 @@ store._ddl['txout_approx'],
                     (block_id, tx_id, tx_pos)
                 VALUES (?, ?, ?)""",
                       (block_id, tx['tx_id'], tx_pos))
-            store.log.info("block_tx %d %d", block_id, tx['tx_id'])
+            #store.log.info("block_tx %d %d", block_id, tx['tx_id'])
 
 
         for frt_pos in xrange(len(b['fruits'])) :
@@ -1764,6 +1767,7 @@ store._ddl['txout_approx'],
                                next_id))
 
                 chain = store.chains_by.id[[x for x in chain_ids][0]]
+                #store.log.info('orphan reward')
                 store.reward_distribution(b, False, block_id, chain)
 
                 if store.use_firstbits:
@@ -2250,6 +2254,7 @@ store._ddl['txout_approx'],
                 txout_id, value = store.lookup_txout(
                     txin['prevout_hash'], txin['prevout_n'])
                 if value is None:
+                    #store.log.info('no value in: %s', txin['prevout_hash'].encode('hex'))
                     tx['value_in'] = None
                 elif tx['value_in'] is not None:
                     tx['value_in'] += value
