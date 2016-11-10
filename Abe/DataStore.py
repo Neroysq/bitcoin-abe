@@ -36,6 +36,7 @@ import BCDataStream
 import deserialize
 import util
 import base58
+from setting import *
 
 SCHEMA_TYPE = "Abe"
 SCHEMA_VERSION = SCHEMA_TYPE + "41"
@@ -682,6 +683,8 @@ store._ddl['configvar'],
         REFERENCES block (block_id)
 )""",
 
+
+
 # CHAIN comprises a magic number, a policy, and (indirectly via
 # CHAIN_LAST_BLOCK_ID and the referenced block's ancestors) a genesis
 # block, possibly null.  A chain may have a currency code.
@@ -749,6 +752,43 @@ store._ddl['configvar'],
     frt_hashPrevEpisode BINARY(32),
     frt_scriptPubKey VARBINARY(""" + str(MAX_SCRIPT) + """)
 )""",
+
+
+"""CREATE TABLE fruit_episode (
+    frt_id NUMERIC(26) NOT NULL PRIMARY KEY,
+    episode_id NUMERIC(14) NOT NULL,
+    pos smallint NOT NULL,
+    is_fresh boolean,
+    FOREIGN KEY (frt_id) REFERENCES frt (frt_id),
+    FOREIGN KEY (episode_id) REFERENCES block (block_id)
+)
+""",
+
+"""CREATE TABLE value_episode (
+    episode_id NUMERIC(14) NOT NULL,
+    pos smallint NOT NULL,
+    fee NUMERIC(30) NOT NULL,
+    coinbase NUMERIC(30) NOT NULL,
+    PRIMARY KEY (episode_id, pos),
+    FOREIGN KEY (episode_id) REFERENCES block (block_id)
+)
+""",
+
+"""CREATE TABLE reward_detail (
+    episode_id NUMERIC(14) NOT NULL,
+    pos smallint NOT NULL,
+    scriptPubKey VARBINARY(""" + str(MAX_SCRIPT) + """),
+    from_creating_block NUMERIC(30) NOT NULL,
+    from_collecting_fresh_fruit NUMERIC(30) NOT NULL,
+    from_collecting_ripe_fruit NUMERIC(30) NOT NULL,
+    from_creating_fresh_fruit NUMERIC(30) NOT NULL,
+    fresh_fruit integer NOT NULL,
+    from_creating_ripe_fruit NUMERIC(30) NOT NULL,
+    ripe_fruit integer NOT NULL,
+    PRIMARY KEY (episode_id, pos, scriptPubKey),
+    FOREIGN KEY (episode_id) REFERENCES block (block_id)
+)
+""",
 
 # Mempool TX not linked to any block, we must track them somewhere
 # for efficient cleanup
@@ -1065,17 +1105,6 @@ store._ddl['txout_approx'],
                 int(nTime))
 
     def reward_distribution(store, b, is_genesis, block_id, chain) :
-        FRUIT_PERIOD_LENGTH = 6
-        nSubsidyHalvingInterval = 210000
-        COIN = 100000000
-        FEE_FRACTION_C1_NUMERATOR = 1
-        FEE_FRACTION_C1_DENOMINATOR = 10
-
-        REWARD_DIFF_FRACTION_C3_NUMERATOR = 1
-        REWARD_DIFF_FRACTION_C3_DENOMINATOR = 100
-
-        REWARD_CREATE_FRACTION_C2_NUMERATOR = 1
-        REWARD_CREATE_FRACTION_C2_DENOMINATOR = 10
         generation_tx = []
         if (b['height'] != None and not is_genesis and b['height'] % FRUIT_PERIOD_LENGTH == 0) :
             store.log.info('reward distr calc: %d', b['height'])
@@ -1132,10 +1161,17 @@ store._ddl['txout_approx'],
             else :
                 hashPrevPrevEpisode = None
 
+            reward_detail = [{} for x in xrange(FRUIT_PERIOD_LENGTH)]
 
             for i in xrange(FRUIT_PERIOD_LENGTH - 1, -1, -1) :
                 if nblock_id == block_id and ('prev_block_id' in b):
                     preblock_id, nvalue_in, nvalue_out = b['prev_block_id'], b['value_in'], b['value_out']
+                    '''
+                    for x in [preblock_id, nvalue_in, nvalue_out] :
+                        if x == None :
+                            store.log.info('prev_block incomplete')
+                            return
+                    '''
                     frts = b['fruits']
                     block_creator = b['scriptPubKey']
                 else :
@@ -1143,6 +1179,12 @@ store._ddl['txout_approx'],
                         SELECT block_scriptPubKey, prev_block_id, block_value_in, block_value_out
                         FROM block
                         WHERE block_id=?""", (nblock_id, ))
+                    '''
+                    for x in row :
+                        if x == None :
+                            store.log.info('prev_block incomplete')
+                            return
+                    '''
                     (block_creator, preblock_id, nvalue_in, nvalue_out) = (store.binout(row[0]), row[1], int(row[2]), int(row[3]))
                     rows = store.selectall("""
                         SELECT frt_id
@@ -1155,7 +1197,7 @@ store._ddl['txout_approx'],
                             SELECT frt_scriptPubKey, frt_hashPrevEpisode
                             FROM frt
                             WHERE frt_id=?""", (row[0], ))
-                        frts.append({"scriptPubKey": store.binout(frt[0]), "hashPrevEpisode": store.hashout(frt[1])})
+                        frts.append({"frt_id": int(row[0]), "scriptPubKey": store.binout(frt[0]), "hashPrevEpisode": store.hashout(frt[1])})
                 f[i] = len(frts) + 1
 
                 fresh_f[i] = 1
@@ -1168,9 +1210,19 @@ store._ddl['txout_approx'],
                     if frt['hashPrevEpisode'] == hashPrevEpisode :
                         fresh_f[i] += 1
                         vfc[0].append(creator)
+                        store.sql("""
+                            INSERT INTO fruit_episode
+                                (frt_id, episode_id, pos, is_fresh)
+                            VALUES (?, ?, ?, ?)
+                            """, (frt['frt_id'], block_id, i, True))
                     elif frt['hashPrevEpisode'] == hashPrevPrevEpisode :
                         ripe_f[i] += 1
                         vfc[1].append(creator)
+                        store.sql("""
+                            INSERT INTO fruit_episode
+                                (frt_id, episode_id, pos, is_fresh)
+                            VALUES (?, ?, ?, ?)
+                            """, (frt['frt_id'], block_id, i, False))
                     else :
                         assert 0 == 1
                         #store.log.info('frt: %s', store.binout_hex(frt['hashPrevEpisode']).encode('hex'))
@@ -1184,11 +1236,28 @@ store._ddl['txout_approx'],
                 block_creators[i] = block_creator
                 fee = nvalue_in - nvalue_out
                 F += f[i]
-                tmp = fee + GetBlockSubsidy(b['height'] - (FRUIT_PERIOD_LENGTH - i - 1))
+                coinbase = GetBlockSubsidy(b['height'] - (FRUIT_PERIOD_LENGTH - i - 1))
+                store.sql("""
+                    INSERT INTO value_episode
+                        (episode_id, pos, fee, coinbase)
+                    VALUES (?, ?, ?, ?)
+                """, (block_id, i, fee, coinbase))
+
+
+                tmp = fee +coinbase
                 reward_creator = tmp * FEE_FRACTION_C1_NUMERATOR / FEE_FRACTION_C1_DENOMINATOR
                 S += tmp - reward_creator
                 rest += tmp - reward_creator
 
+                reward_detail[i][block_creator] = {
+                    'from_creating_block': reward_creator,
+                    'from_collecting_fresh_fruit': 0,
+                    'from_collecting_ripe_fruit': 0,
+                    'from_creating_fresh_fruit': 0,
+                    'fresh_fruit': 0,
+                    'from_creating_ripe_fruit': 0,
+                    'ripe_fruit': 0
+                }
                 if block_creator not in reward_distr :
                     reward_distr[block_creator] = reward_creator
                 else :
@@ -1205,27 +1274,70 @@ store._ddl['txout_approx'],
 
                 reward_per_fruit_co = S / F - reward_per_fruit_cr
                 store.log.info('%d: %d %d', i, reward_per_fruit_cr, reward_per_fruit_co)
-                tmp_reward_co = reward_per_fruit_co * fresh_f[i] + ripe_reward_per_fruit_co * ripe_f[i]
+                tmp_reward_fresh = reward_per_fruit_co * fresh_f[i]
+                tmp_reward_ripe = ripe_reward_per_fruit_co * ripe_f[i]
+                tmp_reward_co = tmp_reward_fresh + tmp_reward_ripe
                 reward_distr[block_creators[i]] += tmp_reward_co
                 rest -= tmp_reward_co
 
+                reward_detail[i][block_creators[i]]['from_collecting_fresh_fruit'] = tmp_reward_fresh
+                reward_detail[i][block_creators[i]]['from_collecting_ripe_fruit'] = tmp_reward_ripe
 
                 for creator in fruit_creator[i][0] :
                     if creator not in reward_distr :
                         reward_distr[creator] = 0
                     reward_distr[creator] += reward_per_fruit_cr
                     rest -= reward_per_fruit_cr
+                    if creator not in reward_detail[i] :
+                        reward_detail[i][creator] = {
+                            'from_creating_block': 0,
+                            'from_collecting_fresh_fruit': 0,
+                            'from_collecting_ripe_fruit': 0,
+                            'from_creating_fresh_fruit': reward_per_fruit_cr,
+                            'fresh_fruit': 1,
+                            'from_creating_ripe_fruit': 0,
+                            'ripe_fruit': 0
+                        }
+                    else :
+                        reward_detail[i][creator]['from_creating_fresh_fruit'] += reward_per_fruit_cr
+                        reward_detail[i][creator]['fresh_fruit'] += 1
 
                 for creator in fruit_creator[i][1] :
                     if creator not in reward_distr :
                         reward_distr[creator] = 0
                     reward_distr[creator] += ripe_reward_per_fruit_cr
                     rest -= ripe_reward_per_fruit_cr
+                    if creator not in reward_detail[i] :
+                        reward_detail[i][creator] = {
+                            'from_creating_block': 0,
+                            'from_collecting_fresh_fruit': 0,
+                            'from_collecting_ripe_fruit': 0,
+                            'from_creating_fresh_fruit': 0,
+                            'fresh_fruit': 0,
+                            'from_creating_ripe_fruit': ripe_reward_per_fruit_cr,
+                            'ripe_fruit': 1
+                        }
+                    else :
+                        reward_detail[i][creator]['from_creating_ripe_fruit'] += ripe_reward_per_fruit_cr
+                        reward_detail[i][creator]['ripe_fruit'] += 1
 
                 store.log.info('rest: %d', rest)
 
             if rest != 0 :
                 reward_distr[block_creators[0]] += rest
+                reward_detail[0][block_creators[0]]['from_creating_block'] += rest
+
+            store.log.info('break point')
+
+            for i in xrange(FRUIT_PERIOD_LENGTH) :
+                for (miner, detail) in reward_detail[i].items() :
+                    store.sql("""
+                        INSERT INTO reward_detail
+                            (episode_id, pos, scriptPubKey, from_creating_block, from_collecting_fresh_fruit, from_collecting_ripe_fruit, from_creating_fresh_fruit, fresh_fruit, from_creating_ripe_fruit, ripe_fruit)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (block_id, i, store.binin(miner), detail['from_creating_block'], detail['from_collecting_fresh_fruit'], detail['from_collecting_ripe_fruit'],
+                        detail['from_creating_fresh_fruit'], detail['fresh_fruit'], detail['from_creating_ripe_fruit'], detail['ripe_fruit']
+                    ))
 
             def GetScript(n) :
                 ret = ''
@@ -1343,6 +1455,7 @@ store._ddl['txout_approx'],
             b['value_out'] += tx['value_out']
             b['value_destroyed'] += tx['value_destroyed']
 
+
         for pos in xrange(len(b['fruits'])) :
             frt = b['fruits'][pos]
 
@@ -1389,6 +1502,10 @@ store._ddl['txout_approx'],
         b['height'] = None if prev_height is None else prev_height + 1
         b['chain_work'] = util.calculate_work(prev_work, b['nBits'])
 
+        if b['height'] is not None:
+            store.log.debug(str(b['height']))
+        if b['value_in'] is None :
+            store.log.info('has no value_in')
 
         if prev_seconds is None:
             b['seconds'] = None
@@ -1530,6 +1647,7 @@ store._ddl['txout_approx'],
                 INSERT INTO block_next (block_id, next_block_id)
                 VALUES (?, ?)""", (prev_block_id, block_id))
         elif not is_genesis:
+            store.log.info(str(b['height']) + ' is an orphan')
             store.sql("INSERT INTO orphan_block (block_id, block_hashPrev)" +
                       " VALUES (?, ?)", (block_id, store.hashin(b['hashPrev'])))
 
@@ -2132,6 +2250,55 @@ store._ddl['txout_approx'],
             b['proof_of_stake_generated'] = -txs[tx_ids[1]]['fees']
             txs[tx_ids[1]]['fees'] = 0
             b['fees'] += b['proof_of_stake_generated']
+
+        if b['height'] is not None and b['height'] > 0 and b['height'] % FRUIT_PERIOD_LENGTH == 0 :
+            b['fruit_status'] = []
+            b['value_status'] = []
+            for i in xrange(FRUIT_PERIOD_LENGTH) :
+                a = {
+                    'fresh': 0,
+                    'ripe': 0,
+                    'block': 1
+                }
+                for row in store.selectall("""
+                    SELECT is_fresh
+                    FROM fruit_episode
+                    WHERE episode_id = ? and pos = ?
+                """, (block_id, i)):
+                    if int(row[0]) == 1 :
+                        a['fresh'] += 1
+                    else :
+                        a['ripe'] += 1
+                b['fruit_status'].append(a)
+
+                row = store.selectrow("""
+                    SELECT fee, coinbase
+                    FROM value_episode
+                    WHERE episode_id = ?  and pos = ?
+                """, (block_id, i))
+                b['value_status'].append(
+                {
+                    'fee': int(row[0]),
+                    'coinbase': int(row[1])
+                }
+                )
+
+            b['reward_detail'] = [{} for x in xrange(FRUIT_PERIOD_LENGTH)]
+            for i in xrange(FRUIT_PERIOD_LENGTH) :
+                for row in store.selectall("""
+                    SELECT scriptPubKey, from_creating_block, from_collecting_fresh_fruit, from_collecting_ripe_fruit, from_creating_fresh_fruit, fresh_fruit, from_creating_ripe_fruit, ripe_fruit
+                    FROM reward_detail
+                    WHERE episode_id = ? and pos = ?
+                """, (block_id, i)) :
+                    b['reward_detail'][i][store.binout(row[0])] = {
+                        'from_creating_block': int(row[1]),
+                        'from_collecting_fresh_fruit': int(row[2]),
+                        'from_collecting_ripe_fruit': int(row[3]),
+                        'from_creating_fresh_fruit': int(row[4]),
+                        'fresh_fruit': int(row[5]),
+                        'from_creating_ripe_fruit': int(row[6]),
+                        'ripe_fruit': int(row[7])
+                    }
 
         return b
 

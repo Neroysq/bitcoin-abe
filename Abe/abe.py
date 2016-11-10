@@ -36,6 +36,7 @@ import readconf
 import deserialize
 import util  # Added functions.
 import base58
+from setting import *
 
 __version__ = version.__version__
 
@@ -64,15 +65,33 @@ DEFAULT_TEMPLATE = """
 <head>
     <link rel="stylesheet" type="text/css"
      href="%(dotdot)s%(STATIC_PATH)sabe.css" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <link rel="stylesheet" href="https://code.getmdl.io/1.2.1/material.indigo-red.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    <script defer src="https://code.getmdl.io/1.2.1/material.min.js"></script>
     <link rel="shortcut icon" href="%(dotdot)s%(STATIC_PATH)sfavicon.ico" />
     <title>%(title)s</title>
 </head>
 <body>
-    <h1><a href="%(dotdot)s%(HOMEPAGE)s"><img
-     src="%(dotdot)s%(STATIC_PATH)slogo32.png" alt="Abe logo" /></a> %(h1)s
-    </h1>
+    <div class="layout mdl-layout mdl-layout--fixed-header mdl-js-layout mdl-color--grey-100">
+        <header class="header mdl-layout__header mdl-layout__header--scroll mdl-color--grey-100 mdl-color-text--grey-800">
+            <div class="mdl-layout__header-row">
+                <span class="mdl-layout-title">
+                    <a href="%(dotdot)s%(HOMEPAGE)s"><img src="%(dotdot)s%(STATIC_PATH)slogo32.png" alt="Abe logo" /></a>%(h1)s
+                </span>
+                <div class="mdl-layout-spacer"></div>
+            </div>
+        </header>
+        <div class="ribbon"></div>
+
     %(body)s
-    <p><a href="%(dotdot)sq">API</a> (machine-readable pages)</p>
+    </div>
+    <p>
+    <a href="%(dotdot)sq" target="_blank" id="view-api" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-color--accent mdl-color-text--accent-contrast">API</a>
+    <button class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored">
+    <a href="%(dotdot)sq">API</a> (machine-readable pages)
+    </button>
+    </p>
     <p style="font-size: smaller">
         <span style="font-style: italic">
             Powered by <a href="%(ABE_URL)s">%(APPNAME)s</a>
@@ -291,13 +310,16 @@ class Abe:
         body = page['body']
         body += [
             abe.search_form(page),
-            '<table>\n',
+            '<table class="mdl-data-table mdl-js-data-table mdl-shadow--2dp">\n',
+            '<thead>'
             '<tr><th>Currency</th><th>Code</th><th>Block</th><th>Time</th>',
             '<th>Started</th><th>Age (days)</th><th>Coins Created</th>',
             '<th>Avg Coin Age</th><th>',
             '% <a href="https://en.bitcoin.it/wiki/Bitcoin_Days_Destroyed">',
             'CoinDD</a></th>',
-            '</tr>\n']
+            '</tr>',
+            '</thead>\n',
+            '<tbody>']
         now = time.time() - EPOCH1970
 
         rows = abe.store.selectall("""
@@ -361,6 +383,7 @@ class Abe:
                         '<td>', percent_destroyed, '</td>']
 
             body += ['</tr>\n']
+        body += ['</tbody>']
         body += ['</table>\n']
         if len(rows) == 0:
             body += ['<p>No block data found.</p>\n']
@@ -515,7 +538,6 @@ class Abe:
             else:
                 percent_destroyed = '%5g%%' % (100.0 - (100.0 * ss / total_ss))
 
-            FRUIT_PERIOD_LENGTH = 6 #TODO
             body += [
                 '<tr><td>',
                 '<strong><font color="red">G </font></strong>' if height % FRUIT_PERIOD_LENGTH == 0 else '',
@@ -686,6 +708,158 @@ class Abe:
                      '</td></tr>\n']
 
         body += '</table>\n'
+
+        if b['height'] is not None and b['height'] != 0 and b['height'] % FRUIT_PERIOD_LENGTH == 0 :
+            body += ['<h3>Overview of this episode</h3>']
+            body += """
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+    <script type="text/javascript">
+      google.charts.load('current', {'packages':['corechart']});
+      google.charts.setOnLoadCallback(drawChart);
+      function drawChart() {
+        var data = google.visualization.arrayToDataTable([
+          ['position', 'fresh fruits', {role: 'annotation'}, 'ripe fruits', {role: 'annotation'}]"""
+
+            for i in xrange(FRUIT_PERIOD_LENGTH) :
+                body += [',[\'' + str(i + 1) + '\', ',
+                    str(b['fruit_status'][i]['fresh'] + 1) + ', ' + '\'' + str(b['fruit_status'][i]['fresh'] + 1) + '\'' + ', ',
+                    str(b['fruit_status'][i]['ripe']) + ', ' + '\'' + str(b['fruit_status'][i]['ripe']) + '\'' + ' ',
+                    ']',
+                ]
+
+            body += """
+        ]);
+
+        var options = {
+          title: 'Fruits distribution',
+          chartArea: {width: '70%', height: '90%'},
+          bars: 'horizontal', // Required for Material Bar Charts.
+          isStacked: true,
+          series: {
+            0:{color:'#558b2f'},
+            1:{color:'#fb8c00'}
+          },
+          //theme: 'maximized'
+        };
+
+
+        var chart = new google.visualization.BarChart(document.getElementById('barchart_material'));
+
+        chart.draw(data, options);
+
+
+        var data2 = google.visualization.arrayToDataTable([
+            ['position', 'fees', {role: 'annotation'}, 'coinbase', {role: 'annotation'}]"""
+
+            for i in xrange(FRUIT_PERIOD_LENGTH) :
+                body += [',[\'' + str(i + 1) + '\', ',
+                 format_satoshis(b['value_status'][i]['fee'], chain) + ', ' + '\'' + format_satoshis(b['value_status'][i]['fee'], chain) + '\'' + ', ',
+                      format_satoshis(b['value_status'][i]['coinbase'], chain) + ', ' + '\'' + format_satoshis(b['value_status'][i]['coinbase'], chain) + '\'' + ' ',
+                      ']',
+                ]
+
+            body += """
+          ]);
+
+
+
+          var options2 = {
+            title: 'Value distribution',
+            chartArea: {width: '70%', height: '90%'},
+            bars: 'horizontal', // Required for Material Bar Charts.
+            isStacked: true,
+            series: {
+              0:{color:'#b71c1c'},
+              1:{color:'#0288d1'}
+            },
+            //theme: 'maximized'
+          };
+
+          var chart = new google.visualization.BarChart(document.getElementById('barchart_material_2'));
+          chart.draw(data2, options2);
+      }
+    </script>
+    <div id="barchart_material" style="height: 400px;"></div>
+    <div id="barchart_material_2" style="height: 400px;"></div>
+            """
+# the following displays the detail of current episode
+            miners = {}
+            for i in xrange(FRUIT_PERIOD_LENGTH) :
+                for creator in b['reward_detail'][i] :
+                    miners[creator] = 1
+
+            miners = [x for x in miners]
+            def compare(x, y) :
+                #store.log.info('%s\n%s\n%d', store.binout_hex(x[0]).encode('hex'), store.binout_hex(y[0]).encode('hex'), store.binout_hex(x[0]).encode('hex') < store.binout_hex(y[0]).encode('hex'))
+                if abe.store.binout_hex(x) < abe.store.binout_hex(y) :
+                    return -1
+                return 1
+            miners = sorted(miners, cmp=compare)
+
+            if (len(miners) > 0) :
+                body += ['<h4>Reward overall of miners</h4>']
+            for (idx, miner) in enumerate(miners) :
+                txout = {}
+                abe.store._export_scriptPubKey(txout, chain, miner)
+                abe.store.log.info('miner: %s', miner.encode('hex'))
+                body += ['<h5>Miner :', abe.format_addresses(txout, page['dotdot'], chain), '</h5>']
+                body += """
+
+                <script type="text/javascript">
+                google.charts.setOnLoadCallback(drawChart""" + str(idx) + """);
+                function drawChart""" + str(idx) + """() {
+                        var data = google.visualization.arrayToDataTable([
+                          ['position', 'from creating blocks', 'from collecting fresh fruits', 'from collecting ripe fruits', 'from creating fresh fruits', {role: 'annotation'}, 'from collecting ripe fruits', {role: 'annotation'}]"""
+
+                for i in xrange(FRUIT_PERIOD_LENGTH) :
+                    if miner in b['reward_detail'][i] :
+                        detail = b['reward_detail'][i][miner]
+                    else :
+                        detail = {
+                            'from_creating_block': 0,
+                            'from_collecting_fresh_fruit': 0,
+                            'from_collecting_ripe_fruit': 0,
+                            'from_creating_fresh_fruit': 0,
+                            'fresh_fruit': 0,
+                            'from_creating_ripe_fruit': 0,
+                            'ripe_fruit': 0
+                        }
+                    body += [',[\'' + str(i + 1) + '\'',
+                        ', ' + format_satoshis(detail['from_creating_block'], chain),
+                        ', ' + format_satoshis(detail['from_collecting_fresh_fruit'], chain),
+                        ', ' + format_satoshis(detail['from_collecting_ripe_fruit'], chain),
+                        ', ' + format_satoshis(detail['from_creating_fresh_fruit'], chain),
+                        ', ' + '\'' + str(detail['fresh_fruit']) + '\'',
+                        ', ' + format_satoshis(detail['from_creating_ripe_fruit'], chain),
+                        ', ' + '\'' + str(detail['ripe_fruit']) + '\'',
+
+                    ]
+                    body += [']']
+
+                body += ["""
+                        ]);
+
+                        var options = {
+                          //title: '',
+                          chartArea: {width: '70%', height: '90%'},
+                          //bars: 'vertical', // Required for Material Bar Charts.
+                          isStacked: true,
+                          //series: {
+                            //0:{color:'#558b2f'},
+                            //1:{color:'#fb8c00'}
+                          //},
+                          //theme: 'maximized'
+                        };
+
+
+                        var chart = new google.visualization.BarChart(document.getElementById('barchart_material""" + str(idx) + """'));
+
+                        chart.draw(data, options);
+
+                      }
+                    </script>
+                    <div id="barchart_material""" + str(idx) + """" style="height: 250px;"></div>
+                """]
 
 
     def handle_block(abe, page):
@@ -951,9 +1125,11 @@ class Abe:
         return [
             '<p>Search by address, block number or hash, transaction or'
             ' public key hash, or chain name:</p>\n'
-            '<form action="', page['dotdot'], 'search"><p>\n'
-            '<input name="q" size="64" value="', escape(q), '" />'
-            '<button type="submit">Search</button>\n'
+            '<form action="', page['dotdot'], 'search">'
+            '<div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label"><p>\n'
+                '<input class="mdl-textfield__input" id="search_form" name="q" size="128" value="', escape(q), '" />'
+                '<button  class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored" type="submit"><i class="material-icons">search</i></button>\n'
+            '</div>'
             '<br />Address or hash search requires at least the first ',
             HASH_PREFIX_MIN, ' characters.</p></form>\n']
 
