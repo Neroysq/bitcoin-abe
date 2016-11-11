@@ -83,3 +83,8 @@ a {
 }
 
 .search-card.mdl-card >
+
+.mdl-list__item{
+  margin-top: 0;
+  margin-bottom: 0;
+}

@@ -91,7 +91,7 @@ DEFAULT_TEMPLATE = """
         <header class="header mdl-layout__header mdl-layout__header--scroll mdl-color--green-700 mdl-color-text--grey-800">
             <div class="mdl-layout__header-row">
                 <span class="mdl-layout-title">
-                    <a href="%(dotdot)s%(HOMEPAGE)s"><img src="%(dotdot)s%(STATIC_PATH)sorange.svg" height="50px" alt="Abe logo" /></a> %(h1)s
+                    <a name='top' href="%(dotdot)s%(HOMEPAGE)s"><img src="%(dotdot)s%(STATIC_PATH)sorange.svg" height="50px" alt="Abe logo" /></a> %(h1)s
                 </span>
                 <div class="mdl-layout-spacer"></div>
             </div>
@@ -120,6 +120,7 @@ DEFAULT_TEMPLATE = """
             </footer>
         </main>
     </div>
+    <a href="#top" id="view-source" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-color--accent mdl-color-text--accent-contrast">Go back to top</a>
     <a href="%(dotdot)sq" target="_blank" id="view-source" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-color--accent mdl-color-text--accent-contrast">API</a>
 </body>
 </html>
@@ -502,38 +503,45 @@ class Abe:
         basename = os.path.basename(page['env']['PATH_INFO'])
 
         nav = [
-            '<button class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored">',
-            '<a href="',
+            #'<button class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored">',
+            '<a class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored" href="',
                basename, '?count=', str(count), '">&lt;&lt;</a>',
-            '</button>'
+            #'</button>'
              ]
-        nav += [' <button class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored">',
-        ' <a href="', basename, '?hi=', str(hi + count),
+        nav += [
+        ' <a class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored" href="', basename, '?hi=', str(hi + count),
                  '&amp;count=', str(count), '">&lt;</a>'
-                 '</button>']
-        nav += [' ', '&gt;']
+                 ]
+        #nav += [' <button class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored">']
         if hi >= count:
-            nav[-1] = ['<button class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored">',
-            '<a href="', basename, '?hi=', str(hi - count),
-                        '&amp;count=', str(count), '">', nav[-1], '</a>', '</button>']
-        nav += [' ', '&gt;&gt;']
+            nav += [
+            ' <a class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored" href="', basename, '?hi=', str(hi - count),
+                        '&amp;count=', str(count), '">&gt;</a>']
+        else :
+            nav += [' <a class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored">&gt;</a>']
+        #nav += ['</button>']
+        #nav += [' <button class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored">']
         if hi != count - 1:
-            nav[-1] = ['<button class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored">',
-            '<a href="', basename, '?hi=', str(count - 1),
-                        '&amp;count=', str(count), '">', nav[-1], '</a>', '</button>']
+            nav += [
+            ' <a class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored" href="', basename, '?hi=', str(count - 1),
+                        '&amp;count=', str(count), '">&gt;&gt;</a>']
+        else :
+            nav += [' <a class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored">&gt;&gt;</a>']
+        #nav += ['</button>']
+
         for c in (20, 50, 100, 500, 2016):
             nav += [' ']
-            nav += ['<button class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored">',]
+            nav += ['<a class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored"',]
             if c != count:
                 nav += [
-                '<a href="', basename, '?count=', str(c)]
+                ' href="', basename, '?count=', str(c)]
                 if hi is not None:
                     nav += ['&amp;hi=', str(max(hi, c - 1))]
-                nav += ['">']
+            nav += ['">']
             nav += [' ', str(c)]
-            if c != count:
-                nav += ['</a>']
-            nav += ['</button>']
+            #if c != count:
+            nav += ['</a>']
+            #nav += ['</button>']
 
         #nav += [' <a href="', page['dotdot'], '">Search</a>']
 
@@ -640,68 +648,116 @@ class Abe:
         is_stake_chain = chain.has_feature('nvc_proof_of_stake')
         is_stake_block = is_stake_chain and b['is_proof_of_stake']
 
-        body += ['<p>']
+        body += '<h3>Overview</h3>'
+        #body += ['<p>']
+        body += ["""
+            <table class="mdl-data-table mdl-js-data-table mdl-shadow--2dp">
+                <thead>
+                    <tr>
+                        <th>Attribute</th>
+                        <th>Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+        """]
         if is_stake_chain:
             body += [
                 'Proof of Stake' if is_stake_block else 'Proof of Work',
                 ': ',
                 format_satoshis(b['generated'], chain), ' coins generated<br />\n']
-        body += ['Hash: ', b['hash'], '<br />\n']
+        def makeitem(a, b) :
+            ret = '<tr><td>'
+            if type(a) is not list :
+                ret += str(a)
+            else :
+                for x in a :
+                    ret += str(x)
+            ret += '</td><td>'
+            if type(b) is not list :
+                ret += str(b)
+            else :
+                for x in b :
+                    ret += str(x)
+            ret += '</td></tr>\n'
+
+            return ret
+        body += makeitem('Hash', b['hash'])
 
         if b['hashPrev'] is not None:
-            body += ['Previous Block: <a href="', dotdotblock,
-                     b['hashPrev'], '">', b['hashPrev'], '</a><br />\n']
+            body += makeitem('Previous Block', '<a href="' + dotdotblock + b['hashPrev'] + '">' + b['hashPrev'] + '</a>')
+            #['Previous Block: <a href="', dotdotblock,                     b['hashPrev'], '">', b['hashPrev'], '</a><br />\n']
+
+        x = ''
         if b['next_block_hashes']:
-            body += ['Next Block: ']
+            x = 'Next Block: '
+        y = ''
         for hash in b['next_block_hashes']:
-            body += ['<a href="', dotdotblock, hash, '">', hash, '</a><br />\n']
+            y += '<a href="' + dotdotblock + hash + '">' + hash + '</a><br />\n'
 
+        body += makeitem(x, y)
         body += [
-            ['Height: ', b['height'], '<br />\n']
-            if b['height'] is not None else '',
+            makeitem('Height', b['height'] if b['height'] is not None else ''),
+            #['Height: ', b['height'], '<br />\n']
+            #if b['height'] is not None else '',
+            makeitem('Version', b['version'])]
+            #'Version: ', b['version'], '<br />\n',
+        txout = {}
+        abe.store._export_scriptPubKey(txout, chain, b['scriptPubKey'])
+        body += [
+            makeitem('Creator', abe.format_addresses(txout, page['dotdot'], chain)),
+            #'scriptPubKey of creator: ', abe.store.binout_hex(b['scriptPubKey']).encode('hex'), '<br />\n',
+            makeitem('Hash of previous episode', b['hashPrevEpisode']),
+            #'Hash of previous episode:', b['hashPrevEpisode'], '<br />\n',
+            makeitem('Transaction Merkle Root', b['hashMerkleRoot']),
+            #'Transaction Merkle Root: ', b['hashMerkleRoot'], '<br />\n',
+            makeitem('Hash of fruits', b['hashFruits']),
+            #'Hash of fruits: ', b['hashFruits'], '<br />\n',
+            makeitem('Fruits', len(b['fruits'])),
+            #'Fruits: ', len(b['fruits']), '<br />\n',
+            makeitem('Time', str(b['nTime']) + ' (' + str(format_time(b['nTime'])) + ')'),
+            #'Time: ', b['nTime'], ' (', format_time(b['nTime']), ')<br />\n',
+            makeitem('Difficulty', str(format_difficulty(util.calculate_difficulty(b['nBits']))) + ' (Bits: ' + str(b['nBits']) + ')'),
+            #'Difficulty: ', format_difficulty(util.calculate_difficulty(b['nBits'])),
+            #' (Bits: %x)' % (b['nBits'],), '<br />\n',
+            makeitem('Cumulative Difficulty', format_difficulty(util.work_to_difficulty(b['chain_work']))) if b['chain_work'] is not None else '',
+            #['Cumulative Difficulty: ', format_difficulty(
+            #        util.work_to_difficulty(b['chain_work'])), '<br />\n']
+            #if b['chain_work'] is not None else '',
+            makeitem('Nonce', b['nNonce']),
+            #'Nonce: ', b['nNonce'], '<br />\n',
+            makeitem('Transactions', len(b['transactions'])),
+            #'Transactions: ', len(b['transactions']), '<br />\n',
+            makeitem('Value out', format_satoshis(b['value_out'], chain)),
+            #'Value out: ', format_satoshis(b['value_out'], chain), '<br />\n',
+            makeitem('Transaction Fees', format_satoshis(b['fees'], chain)),
+            #'Transaction Fees: ', format_satoshis(b['fees'], chain), '<br />\n',
 
-            'Version: ', b['version'], '<br />\n',
-            'scriptPubKey of creator: ', abe.store.binout_hex(b['scriptPubKey']).encode('hex'), '<br />\n',
-            'Hash of previous episode:', b['hashPrevEpisode'], '<br />\n',
-            'Transaction Merkle Root: ', b['hashMerkleRoot'], '<br />\n',
-            'Hash of fruits: ', b['hashFruits'], '<br />\n',
-            'Fruits: ', len(b['fruits']), '<br />\n',
-            'Time: ', b['nTime'], ' (', format_time(b['nTime']), ')<br />\n',
-            'Difficulty: ', format_difficulty(util.calculate_difficulty(b['nBits'])),
-            ' (Bits: %x)' % (b['nBits'],), '<br />\n',
+            #['Average Coin Age: %6g' % (b['satoshi_seconds'] / 86400.0 / b['chain_satoshis'],),
+#             ' days<br />\n']
+#            if b['chain_satoshis'] and (b['satoshi_seconds'] is not None) else '',
 
-            ['Cumulative Difficulty: ', format_difficulty(
-                    util.work_to_difficulty(b['chain_work'])), '<br />\n']
-            if b['chain_work'] is not None else '',
+#            '' if b['satoshis_destroyed'] is None else
+#            ['Coin-days Destroyed: ',
+#             format_satoshis(b['satoshis_destroyed'] / 86400.0, chain), '<br />\n'],
 
-            'Nonce: ', b['nNonce'], '<br />\n',
-            'Transactions: ', len(b['transactions']), '<br />\n',
-            'Value out: ', format_satoshis(b['value_out'], chain), '<br />\n',
-            'Transaction Fees: ', format_satoshis(b['fees'], chain), '<br />\n',
+#            ['Cumulative Coin-days Destroyed: %6g%%<br />\n' %
+#             (100 * (1 - float(b['satoshi_seconds']) / b['chain_satoshi_seconds']),)]
+#            if b['chain_satoshi_seconds'] else '',
 
-            ['Average Coin Age: %6g' % (b['satoshi_seconds'] / 86400.0 / b['chain_satoshis'],),
-             ' days<br />\n']
-            if b['chain_satoshis'] and (b['satoshi_seconds'] is not None) else '',
+#            ['sat=',b['chain_satoshis'],';sec=',seconds,';ss=',b['satoshi_seconds'],
+#             ';total_ss=',b['chain_satoshi_seconds'],';destroyed=',b['satoshis_destroyed']]
+#            if abe.debug else '',
 
-            '' if b['satoshis_destroyed'] is None else
-            ['Coin-days Destroyed: ',
-             format_satoshis(b['satoshis_destroyed'] / 86400.0, chain), '<br />\n'],
+            '\n']
+        body += ['</tbody>', '</table>']
 
-            ['Cumulative Coin-days Destroyed: %6g%%<br />\n' %
-             (100 * (1 - float(b['satoshi_seconds']) / b['chain_satoshi_seconds']),)]
-            if b['chain_satoshi_seconds'] else '',
-
-            ['sat=',b['chain_satoshis'],';sec=',seconds,';ss=',b['satoshi_seconds'],
-             ';total_ss=',b['chain_satoshi_seconds'],';destroyed=',b['satoshis_destroyed']]
-            if abe.debug else '',
-
-            '</p>\n']
 
         body += ['<h3>Transactions</h3>\n']
 
-        body += ['<table><tr><th>Transaction</th><th>Fee</th>'
+        body += ['<table class="mdl-data-table mdl-js-data-table mdl-shadow--2dp"><thead><tr><th>Transaction</th><th>Fee</th>'
                  '<th>Size (kB)</th><th>From (amount)</th><th>To (amount)</th>'
-                 '</tr>\n']
+                 '</tr></thead>\n']
+        body += ['<tbody>']
 
         for tx in b['transactions']:
             if tx['total_in'] == 0 :
@@ -738,13 +794,24 @@ class Abe:
                          format_satoshis(txout['value'], chain), '<br />']
 
             body += ['</td></tr>\n']
+        body += '</tbody>'
         body += '</table>\n'
 
         body += ['<h3>Fruits</h3>\n']
 
-        body += ['<table><tr><th>Fruits</th><th>Hash</th>'
-                 '<th>Hash of previous episode</th><th>Creator</th>'
-                 '</tr>\n']
+        body += ['<table class="mdl-data-table mdl-js-data-table mdl-shadow--2dp"><thead><tr><th>#</th><th>Hash</th>'
+                 '<th>Creator</th>'
+                 '</tr></thead>\n']
+
+        body += '<tbody>'
+
+        pk2add = {}
+        for frt in b['fruits'] :
+            pk = frt['scriptPubKey']
+            if pk not in pk2add :
+                txout = {}
+                abe.store._export_scriptPubKey(txout, chain, pk)
+                pk2add[pk] = abe.format_addresses(txout, page['dotdot'], chain)
 
         for (idx, frt) in enumerate(b['fruits']):
             is_ripe = (frt['hashPrevEpisode'] != b['hashPrevEpisode'])
@@ -752,10 +819,10 @@ class Abe:
                     '<strong><font color="green">R </font></strong>' if is_ripe else '',
                     idx,
                     '</td><td>', frt['hash'],
-                     '</td><td>', frt['hashPrevEpisode'],
-                     '</td><td>', abe.store.binout_hex(frt['scriptPubKey']).encode('hex'),
+                     '</td><td>', pk2add[frt['scriptPubKey']],
                      '</td></tr>\n']
 
+        body += '</tbody>'
         body += '</table>\n'
 
         if b['height'] is not None and b['height'] != 0 and b['height'] % FRUIT_PERIOD_LENGTH == 0 :
@@ -846,7 +913,8 @@ class Abe:
             miners = sorted(miners, cmp=compare)
 
             if (len(miners) > 0) :
-                body += ['<h4>Reward overall of miners</h4>']
+                body += ['<h4 name="reward">Reward overall of miners</h4>']
+                body += ['<a href="#name" id="to-reward" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-color--accent mdl-color-text--accent-contrast">Reward Overall</a>']
             for (idx, miner) in enumerate(miners) :
                 txout = {}
                 abe.store._export_scriptPubKey(txout, chain, miner)
