@@ -904,6 +904,11 @@ class Abe:
             //theme: 'maximized'
           };
 
+          var formatter = new google.visualization.NumberFormat({fractionDigits: 8});
+          formatter.format(data2, 1);
+          formatter.format(data2, 2);
+          formatter.format(data2, 3);
+          formatter.format(data2, 4);
           var chart = new google.visualization.BarChart(document.getElementById('barchart_material_2'));
           chart.draw(data2, options2);
       }
@@ -939,7 +944,7 @@ class Abe:
                 google.charts.setOnLoadCallback(drawChart""" + str(idx) + """);
                 function drawChart""" + str(idx) + """() {
                         var data = google.visualization.arrayToDataTable([
-                          ['position', 'by creating blocks', 'by collecting fresh fruits', 'by collecting ripe fruits', 'by creating fresh fruits', {role: 'annotation'}, 'by collecting ripe fruits', {role: 'annotation'}]"""
+                          ['position', 'by creating blocks', 'by collecting fresh fruits', 'by collecting ripe fruits', 'by creating fresh fruits', {role: 'annotation'}, 'by creating ripe fruits', {role: 'annotation'}]"""
 
                 for i in xrange(FRUIT_PERIOD_LENGTH) :
                     if miner in b['reward_detail'][i] :
@@ -981,6 +986,13 @@ class Abe:
                           //theme: 'maximized'
                         };
 
+
+                        var formatter = new google.visualization.NumberFormat({fractionDigits: 8});
+                        formatter.format(data, 1);
+                        formatter.format(data, 2);
+                        formatter.format(data, 3);
+                        formatter.format(data, 4);
+                        formatter.format(data, 6);
 
                         var chart = new google.visualization.BarChart(document.getElementById('barchart_material""" + str(idx) + """'));
 
