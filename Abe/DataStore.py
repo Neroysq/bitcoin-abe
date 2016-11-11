@@ -1369,7 +1369,7 @@ store._ddl['txout_approx'],
                         k = n & 0xff
                         a.append(chr(k))
                         n >>= 8
-                    if a[-1] > chr(0x80) :
+                    if a[-1] >= chr(0x80) :
                         a.append(chr(0))
                     k = len(a)
                     ret += chr(k)

@@ -115,13 +115,14 @@ DEFAULT_TEMPLATE = """
                         <li>%(download)s</li>
                         <li>Tips appreciated! <a href="%(dotdot)saddress/%(DONATIONS_BTC)s">BTC</a> <a href="%(dotdot)saddress/%(DONATIONS_NMC)s">NMC</a></li>
                         <li><div>Fruit icon made by <a href="http://www.flaticon.com/authors/madebyoliver" title="Madebyoliver">Madebyoliver</a> from <a href="http://www.flaticon.com" title="Flaticon">www.flaticon.com</a> is licensed by <a href="http://creativecommons.org/licenses/by/3.0/" title="Creative Commons BY 3.0" target="_blank">CC 3.0 BY</a></div></li>
+                        <li><a href="%(dotdot)sq" target="_blank" id="view-source">API</a></li>
                     </ul>
                 </div>
             </footer>
         </main>
     </div>
     <a href="#top" id="view-source" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-color--accent mdl-color-text--accent-contrast">Go back to top</a>
-    <a href="%(dotdot)sq" target="_blank" id="view-source" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-color--accent mdl-color-text--accent-contrast">API</a>
+
 </body>
 </html>
 """
