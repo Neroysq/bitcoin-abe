@@ -40,7 +40,7 @@ from setting import *
 
 __version__ = version.__version__
 
-ABE_APPNAME = "Abe"
+ABE_APPNAME = "FruitChain Abe"
 ABE_VERSION = __version__
 ABE_URL = 'https://github.com/bitcoin-abe/bitcoin-abe'
 
@@ -63,44 +63,64 @@ DEFAULT_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta charset="utf-8">
     <link rel="stylesheet" type="text/css"
      href="%(dotdot)s%(STATIC_PATH)sabe.css" />
+     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
-    <link rel="stylesheet" href="https://code.getmdl.io/1.2.1/material.indigo-red.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    <link rel="stylesheet" href="https://code.getmdl.io/1.2.1/material.green-red.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:regular,bold,italic,thin,light,bolditalic,black,medium&amp;lang=en">
     <script defer src="https://code.getmdl.io/1.2.1/material.min.js"></script>
-    <link rel="shortcut icon" href="%(dotdot)s%(STATIC_PATH)sfavicon.ico" />
+    <link rel="shortcut icon" href="%(dotdot)s%(STATIC_PATH)sorange.svg" />
+    <link rel="stylesheet" href="%(dotdot)s%(STATIC_PATH)sstyle.css">
     <title>%(title)s</title>
+    <style>
+        #view-source {
+            position: fixed;
+            display: block;
+            right: 0;
+            bottom: 0;
+            margin-right: 40px;
+            margin-bottom: 40px;
+            z-index: 900;
+        }
+    </style>
 </head>
 <body>
     <div class="layout mdl-layout mdl-layout--fixed-header mdl-js-layout mdl-color--grey-100">
-        <header class="header mdl-layout__header mdl-layout__header--scroll mdl-color--grey-100 mdl-color-text--grey-800">
+        <header class="header mdl-layout__header mdl-layout__header--scroll mdl-color--green-700 mdl-color-text--grey-800">
             <div class="mdl-layout__header-row">
                 <span class="mdl-layout-title">
-                    <a href="%(dotdot)s%(HOMEPAGE)s"><img src="%(dotdot)s%(STATIC_PATH)slogo32.png" alt="Abe logo" /></a>%(h1)s
+                    <a href="%(dotdot)s%(HOMEPAGE)s"><img src="%(dotdot)s%(STATIC_PATH)sorange.svg" height="50px" alt="Abe logo" /></a> %(h1)s
                 </span>
                 <div class="mdl-layout-spacer"></div>
             </div>
         </header>
         <div class="ribbon"></div>
-
-    %(body)s
+        <main class="main mdl-layout__content">
+            <div class="container mdl-grid">
+                <div class="mdl-cell mdl-cell--2-col mdl-cell--hide-tablet mdl-cell--hide-phone"></div>
+                <div class="content  mdl-color--grey-50 mdl-shadow--4dp content mdl-color-text--grey-800 mdl-cell mdl-cell--8-col">
+                    %(body)s
+                </div>
+            </div>
+            <footer class="footer mdl-mini-footer">
+                <div class="mdl-mini-footer--left-section">
+                    <ul class="mdl-mini-footer--link-list">
+                        <li>
+                            <span style="font-style: italic">
+                                Powered by <a href="%(ABE_URL)s">%(APPNAME)s</a>
+                            </span>
+                        </li>
+                        <li>%(download)s</li>
+                        <li>Tips appreciated! <a href="%(dotdot)saddress/%(DONATIONS_BTC)s">BTC</a> <a href="%(dotdot)saddress/%(DONATIONS_NMC)s">NMC</a></li>
+                        <li><div>Fruit icon made by <a href="http://www.flaticon.com/authors/madebyoliver" title="Madebyoliver">Madebyoliver</a> from <a href="http://www.flaticon.com" title="Flaticon">www.flaticon.com</a> is licensed by <a href="http://creativecommons.org/licenses/by/3.0/" title="Creative Commons BY 3.0" target="_blank">CC 3.0 BY</a></div></li>
+                    </ul>
+                </div>
+            </footer>
+        </main>
     </div>
-    <p>
-    <a href="%(dotdot)sq" target="_blank" id="view-api" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-color--accent mdl-color-text--accent-contrast">API</a>
-    <button class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored">
-    <a href="%(dotdot)sq">API</a> (machine-readable pages)
-    </button>
-    </p>
-    <p style="font-size: smaller">
-        <span style="font-style: italic">
-            Powered by <a href="%(ABE_URL)s">%(APPNAME)s</a>
-        </span>
-        %(download)s
-        Tips appreciated!
-        <a href="%(dotdot)saddress/%(DONATIONS_BTC)s">BTC</a>
-        <a href="%(dotdot)saddress/%(DONATIONS_NMC)s">NMC</a>
-    </p>
+    <a href="%(dotdot)sq" target="_blank" id="view-source" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-color--accent mdl-color-text--accent-contrast">API</a>
 </body>
 </html>
 """
@@ -306,17 +326,18 @@ class Abe:
         return getattr(abe, 'handle_' + cmd, None)
 
     def handle_chains(abe, page):
-        page['title'] = ABE_APPNAME + ' Search'
+        page['title'] = ABE_APPNAME + ' Chains'
         body = page['body']
         body += [
             abe.search_form(page),
+            '</br>',
             '<table class="mdl-data-table mdl-js-data-table mdl-shadow--2dp">\n',
             '<thead>'
             '<tr><th>Currency</th><th>Code</th><th>Block</th><th>Time</th>',
-            '<th>Started</th><th>Age (days)</th><th>Coins Created</th>',
-            '<th>Avg Coin Age</th><th>',
-            '% <a href="https://en.bitcoin.it/wiki/Bitcoin_Days_Destroyed">',
-            'CoinDD</a></th>',
+            #'<th>Started</th><th>Age (days)</th><th>Coins Created</th>',
+            #'<th>Avg Coin Age</th><th>',
+            #'% <a href="https://en.bitcoin.it/wiki/Bitcoin_Days_Destroyed">',
+            #'CoinDD</a></th>',
             '</tr>',
             '</thead>\n',
             '<tbody>']
@@ -350,7 +371,7 @@ class Abe:
                     '<td><a href="block/', hash, '">', height, '</a></td>',
                     '<td>', format_time(nTime), '</td>']
 
-                if row[6] is not None and row[7] is not None:
+                if False and row[6] is not None and row[7] is not None:
                     (seconds, satoshis, ss, total_ss) = (
                         int(row[4]), int(row[5]), int(row[6]), int(row[7]))
 
@@ -466,7 +487,8 @@ class Abe:
                    b.block_nBits, b.block_value_out,
                    b.block_total_seconds, b.block_satoshi_seconds,
                    b.block_total_satoshis, b.block_ss_destroyed,
-                   b.block_total_ss
+                   b.block_total_ss,
+                   b.block_num_frt
               FROM block b
               JOIN chain_candidate cc ON (b.block_id = cc.block_id)
              WHERE cc.chain_id = ?
@@ -479,48 +501,71 @@ class Abe:
             hi = int(rows[0][1])
         basename = os.path.basename(page['env']['PATH_INFO'])
 
-        nav = ['<a href="',
-               basename, '?count=', str(count), '">&lt;&lt;</a>']
-        nav += [' <a href="', basename, '?hi=', str(hi + count),
-                 '&amp;count=', str(count), '">&lt;</a>']
+        nav = [
+            '<button class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored">',
+            '<a href="',
+               basename, '?count=', str(count), '">&lt;&lt;</a>',
+            '</button>'
+             ]
+        nav += [' <button class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored">',
+        ' <a href="', basename, '?hi=', str(hi + count),
+                 '&amp;count=', str(count), '">&lt;</a>'
+                 '</button>']
         nav += [' ', '&gt;']
         if hi >= count:
-            nav[-1] = ['<a href="', basename, '?hi=', str(hi - count),
-                        '&amp;count=', str(count), '">', nav[-1], '</a>']
+            nav[-1] = ['<button class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored">',
+            '<a href="', basename, '?hi=', str(hi - count),
+                        '&amp;count=', str(count), '">', nav[-1], '</a>', '</button>']
         nav += [' ', '&gt;&gt;']
         if hi != count - 1:
-            nav[-1] = ['<a href="', basename, '?hi=', str(count - 1),
-                        '&amp;count=', str(count), '">', nav[-1], '</a>']
+            nav[-1] = ['<button class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored">',
+            '<a href="', basename, '?hi=', str(count - 1),
+                        '&amp;count=', str(count), '">', nav[-1], '</a>', '</button>']
         for c in (20, 50, 100, 500, 2016):
             nav += [' ']
+            nav += ['<button class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored">',]
             if c != count:
-                nav += ['<a href="', basename, '?count=', str(c)]
+                nav += [
+                '<a href="', basename, '?count=', str(c)]
                 if hi is not None:
                     nav += ['&amp;hi=', str(max(hi, c - 1))]
                 nav += ['">']
             nav += [' ', str(c)]
             if c != count:
                 nav += ['</a>']
+            nav += ['</button>']
 
-        nav += [' <a href="', page['dotdot'], '">Search</a>']
+        #nav += [' <a href="', page['dotdot'], '">Search</a>']
 
         extra = False
         #extra = True
         body += ['<p>', nav, '</p>\n',
-                 '<table><tr><th>Block</th><th>Approx. Time</th>',
-                 '<th>Transactions</th><th>Value Out</th>',
-                 '<th>Difficulty</th><th>Outstanding</th>',
-                 '<th>Average Age</th><th>Chain Age</th>',
-                 '<th>% ',
-                 '<a href="https://en.bitcoin.it/wiki/Bitcoin_Days_Destroyed">',
-                 'CoinDD</a></th>',
-                 ['<th>Satoshi-seconds</th>',
-                  '<th>Total ss</th>']
-                 if extra else '',
-                 '</tr>\n']
+                """
+            <table class="mdl-data-table mdl-js-data-table mdl-shadow--2dp">
+                <thead>
+                    <tr>
+                        <th>Block</th>
+                        <th>Approx. Time</th>
+                        <th>Transactions</th>
+                        <th>Fruits</th>
+                        <th>Value Out</th>"""
+                    '</tr>',
+                '</thead>']
+
+        '''
+<th>Difficulty</th><th>Outstanding</th>
+<th>Average Age</th><th>Chain Age</th>
+<th>%,
+    '<a href="https://en.bitcoin.it/wiki/Bitcoin_Days_Destroyed">',
+    'CoinDD</a></th>',
+['<th>Satoshi-seconds</th>',
+'<th>Total ss</th>'] if extra else '',
+        '''
+
+        body += '<tbody>'
         for row in rows:
             (hash, height, nTime, num_tx, nBits, value_out,
-             seconds, ss, satoshis, destroyed, total_ss) = row
+             seconds, ss, satoshis, destroyed, total_ss, num_frt) = row
             nTime = int(nTime)
             value_out = int(value_out)
             seconds = int(seconds)
@@ -546,17 +591,21 @@ class Abe:
                 '">', height, '</a>'
                 '</td><td>', format_time(int(nTime)),
                 '</td><td>', num_tx,
+                '</td><td>', num_frt,
                 '</td><td>', format_satoshis(value_out, chain),
-                '</td><td>', util.calculate_difficulty(int(nBits)),
-                '</td><td>', format_satoshis(satoshis, chain),
-                '</td><td>', avg_age,
-                '</td><td>', '%5g' % (seconds / 86400.0),
-                '</td><td>', percent_destroyed,
-                ['</td><td>', '%8g' % ss,
-                 '</td><td>', '%8g' % total_ss] if extra else '',
                 '</td></tr>\n']
 
-        body += ['</table>\n<p>', nav, '</p>\n']
+            """
+'</td><td>', util.calculate_difficulty(int(nBits)),
+'</td><td>', format_satoshis(satoshis, chain),
+'</td><td>', avg_age,
+'</td><td>', '%5g' % (seconds / 86400.0),
+'</td><td>', percent_destroyed,
+['</td><td>', '%8g' % ss,
+ '</td><td>', '%8g' % total_ss] if extra else '',
+            """
+
+        body += ['</tbody></table>\n<p><br>', nav, '</p>\n']
 
     def _show_block(abe, page, dotdotblock, chain, **kwargs):
         body = page['body']
@@ -809,7 +858,7 @@ class Abe:
                 google.charts.setOnLoadCallback(drawChart""" + str(idx) + """);
                 function drawChart""" + str(idx) + """() {
                         var data = google.visualization.arrayToDataTable([
-                          ['position', 'from creating blocks', 'from collecting fresh fruits', 'from collecting ripe fruits', 'from creating fresh fruits', {role: 'annotation'}, 'from collecting ripe fruits', {role: 'annotation'}]"""
+                          ['position', 'by creating blocks', 'by collecting fresh fruits', 'by collecting ripe fruits', 'by creating fresh fruits', {role: 'annotation'}, 'by collecting ripe fruits', {role: 'annotation'}]"""
 
                 for i in xrange(FRUIT_PERIOD_LENGTH) :
                     if miner in b['reward_detail'][i] :
@@ -858,7 +907,7 @@ class Abe:
 
                       }
                     </script>
-                    <div id="barchart_material""" + str(idx) + """" style="height: 250px;"></div>
+                    <div id="barchart_material""" + str(idx) + """" style="height: 400px;"></div>
                 """]
 
 
@@ -1123,15 +1172,31 @@ class Abe:
     def search_form(abe, page):
         q = (page['params'].get('q') or [''])[0]
         return [
+
+            '<div class="search-card mdl-card mdl-shadow--2dp">',
+            '<div class="mdl-card__title">',
+            '<h2 class="mdl-card__title-text">Search</h2>',
+            '</div>',
+            '<div class="mdl-card__supporting-text">',
             '<p>Search by address, block number or hash, transaction or'
             ' public key hash, or chain name:</p>\n'
             '<form action="', page['dotdot'], 'search">'
-            '<div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label"><p>\n'
-                '<input class="mdl-textfield__input" id="search_form" name="q" size="128" value="', escape(q), '" />'
-                '<button  class="mdl-button mdl-js-button mdl-button--raised mdl-button--colored" type="submit"><i class="material-icons">search</i></button>\n'
-            '</div>'
+            """
+                <div class="mdl-textfield mdl-js-textfield mdl-textfield--expandable">
+                    <label class="mdl-button mdl-js-button mdl-button--icon" for="search_form">
+                        <i class="material-icons">search</i>
+                    </label>
+                    <div class="mdl-textfield__expandable-holder">
+                        <input class="mdl-textfield__input" id="search_form" name="q" value=\"""", escape(q), """\">
+                        <label class="mdl-textfield__label" for="search_form">Expandable Input</label>
+                    </div>
+                </div>
+            """
             '<br />Address or hash search requires at least the first ',
-            HASH_PREFIX_MIN, ' characters.</p></form>\n']
+            HASH_PREFIX_MIN, ' characters.</form>',
+            '</div>',
+            '</div>',
+            '\n']
 
     def handle_search(abe, page):
         page['title'] = 'Search'

@@ -536,6 +536,7 @@ class DataStore(object):
     prev.block_hash prev_block_hash,
     b.block_chain_work,
     b.block_num_tx,
+    b.block_num_frt,
     b.block_value_in,
     b.block_value_out,
     b.block_total_satoshis,
@@ -676,6 +677,7 @@ store._ddl['configvar'],
     block_satoshi_seconds NUMERIC(28) NULL,
     block_total_ss NUMERIC(28) NULL,
     block_num_tx  NUMERIC(10) NOT NULL,
+    block_num_frt NUMERIC(10) NOT NULL,
     block_ss_destroyed NUMERIC(28) NULL,
     FOREIGN KEY (prev_block_id)
         REFERENCES block (block_id),
@@ -755,10 +757,11 @@ store._ddl['configvar'],
 
 
 """CREATE TABLE fruit_episode (
-    frt_id NUMERIC(26) NOT NULL PRIMARY KEY,
+    frt_id NUMERIC(26) NOT NULL,
     episode_id NUMERIC(14) NOT NULL,
     pos smallint NOT NULL,
     is_fresh boolean,
+    PRIMARY KEY (frt_id, episode_id),
     FOREIGN KEY (frt_id) REFERENCES frt (frt_id),
     FOREIGN KEY (episode_id) REFERENCES block (block_id)
 )
@@ -1117,6 +1120,14 @@ store._ddl['txout_approx'],
                 nSubsidy >>= halvings
                 return nSubsidy
 
+            nTx = {
+                'version': 1,
+                'txIn': [],
+                'txOut': [],
+                'lockTime': 0,
+                'value_in': 0,
+                'value_out': 0
+            }
             block_creators = {}
             reward_distr = {}
             fruit_creator = {}
@@ -1132,12 +1143,15 @@ store._ddl['txout_approx'],
             #get hashPrevEpisode and hashPrevPrevEpisode
             bid = nblock_id
             for i in xrange(FRUIT_PERIOD_LENGTH) :
-                row = store.selectrow("""
-                    SELECT prev_block_id
-                    FROM block
-                    WHERE block_id=?""", (bid, ))
-                assert row != None
-                bid = row[0]
+                if bid == block_id :
+                    bid = b['prev_block_id']
+                else :
+                    row = store.selectrow("""
+                        SELECT prev_block_id
+                        FROM block
+                        WHERE block_id=?""", (bid, ))
+                    assert row != None
+                    bid = row[0]
             row = store.selectrow("""
                 SELECT block_hash
                 FROM block
@@ -1245,9 +1259,9 @@ store._ddl['txout_approx'],
 
 
                 tmp = fee +coinbase
+                nTx['value_out'] += tmp
                 reward_creator = tmp * FEE_FRACTION_C1_NUMERATOR / FEE_FRACTION_C1_DENOMINATOR
                 S += tmp - reward_creator
-                rest += tmp - reward_creator
 
                 reward_detail[i][block_creator] = {
                     'from_creating_block': reward_creator,
@@ -1265,6 +1279,8 @@ store._ddl['txout_approx'],
 
                 nblock_id = preblock_id
 
+            rest = S
+            store.log.info('S: %d F: %d', S, F)
             ripe_reward_per_fruit_cr = (S * (REWARD_CREATE_FRACTION_C2_DENOMINATOR * (FRUIT_PERIOD_LENGTH * REWARD_DIFF_FRACTION_C3_DENOMINATOR) - REWARD_CREATE_FRACTION_C2_NUMERATOR * (FRUIT_PERIOD_LENGTH) * REWARD_DIFF_FRACTION_C3_DENOMINATOR)) / (F * (FRUIT_PERIOD_LENGTH) * REWARD_CREATE_FRACTION_C2_DENOMINATOR * REWARD_DIFF_FRACTION_C3_DENOMINATOR)
             ripe_reward_per_fruit_co = S / F - ripe_reward_per_fruit_cr
             store.log.info('ripe: %d %d', ripe_reward_per_fruit_cr, ripe_reward_per_fruit_co)
@@ -1363,12 +1379,6 @@ store._ddl['txout_approx'],
                 return ret
 
             #tmpds = BCDataStream.BCDataStream()
-            nTx = {
-                'version': 1,
-                'txIn': [],
-                'txOut': [],
-                'lockTime': 0
-            }
             nTx['txIn'].append({
                 'prevout_hash': '\x00'*32,
                 'prevout_n': (1 << 32) - 1,
@@ -1405,6 +1415,7 @@ store._ddl['txout_approx'],
                     (block_id, tx_id, tx_pos)
                     VALUES (?, ?, ?)
             """, (block_id, tx['tx_id'], -1))
+
 
             store.log.info("generation tx %d %d %s\n%s", block_id, tx['tx_id'], str(tx['hash'][::-1]).encode('hex'), str(tx))
 
@@ -1505,7 +1516,7 @@ store._ddl['txout_approx'],
         if b['height'] is not None:
             store.log.debug(str(b['height']))
         if b['value_in'] is None :
-            store.log.info('has no value_in')
+            store.log.debug('has no value_in')
 
         if prev_seconds is None:
             b['seconds'] = None
@@ -1545,10 +1556,10 @@ store._ddl['txout_approx'],
                     block_height,
                     prev_block_id, block_chain_work, block_value_in,
                     block_value_out, block_total_satoshis,
-                    block_total_seconds, block_total_ss, block_num_tx,
+                    block_total_seconds, block_total_ss, block_num_tx, block_num_frt,
                     search_block_id
                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )""",
                 (block_id, store.hashin(b['hash']), store.intin(b['version']),
                     store.hashin(b['hashPrevEpisode']),
@@ -1562,7 +1573,7 @@ store._ddl['txout_approx'],
                  store.intin(b['value_in']), store.intin(b['value_out']),
                  store.intin(b['satoshis']), store.intin(b['seconds']),
                  store.intin(b['total_ss']),
-                 len(b['transactions']), b['search_block_id']))
+                 len(b['transactions']), len(b['fruits']), b['search_block_id']))
             store.log.debug('block store suc: ' + str(b['hash'][::-1]).encode('hex'))
 
         except store.dbmodule.DatabaseError:
@@ -1620,6 +1631,7 @@ store._ddl['txout_approx'],
             store._populate_block_txin(block_id)
 
             if all_txins_linked or not store._has_unlinked_txins(block_id):
+                store.log.info('haha')
                 b['ss_destroyed'] = store._get_block_ss_destroyed(
                     block_id, b['nTime'],
                     map(lambda tx: tx['tx_id'], b['transactions']))
@@ -1637,6 +1649,7 @@ store._ddl['txout_approx'],
                            store.intin(b['ss_destroyed']),
                            block_id))
             else:
+                store.log.info('hehe')
                 b['ss_destroyed'] = None
                 b['ss'] = None
 
@@ -2044,7 +2057,8 @@ store._ddl['txout_approx'],
                 block_satoshi_seconds,
                 block_total_ss,
                 block_ss_destroyed,
-                block_num_tx
+                block_num_tx,
+                block_num_frt
               FROM chain_summary
              WHERE """ + ' AND '.join(where) + """
              ORDER BY
