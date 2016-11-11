@@ -644,7 +644,13 @@ class Abe:
         else:
             page['title'] = ['Block ', b['hash'][:4], '...', b['hash'][-10:]]
 
+        body += ['<a href="#transactions" id="to-transactions" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-color--accent mdl-color-text--accent-contrast">Transactions</a>']
+        body += [' <a href="#fruits" id="to-fruits" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-color--accent mdl-color-text--accent-contrast">Fruits</a>']
+        if b['height'] is not None and b['height'] != 0 and b['height'] % FRUIT_PERIOD_LENGTH == 0 :
+            body += [' <a href="#episode" id="to-episode" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-color--accent mdl-color-text--accent-contrast">Episode</a>']
+            body += [' <a href="#reward" id="to-reward" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-color--accent mdl-color-text--accent-contrast">Reward of miners</a>']
         body += abe.short_link(page, 'b/' + block_shortlink(b['hash']))
+
 
         is_stake_chain = chain.has_feature('nvc_proof_of_stake')
         is_stake_block = is_stake_chain and b['is_proof_of_stake']
@@ -674,11 +680,15 @@ class Abe:
                 for x in a :
                     ret += str(x)
             ret += '</td><td>'
+            tmp = ''
             if type(b) is not list :
-                ret += str(b)
+                tmp += str(b)
             else :
                 for x in b :
-                    ret += str(x)
+                    tmp += str(x)
+            if tmp == '' :
+                return ''
+            ret += tmp
             ret += '</td></tr>\n'
 
             return ret
@@ -752,8 +762,8 @@ class Abe:
             '\n']
         body += ['</tbody>', '</table>']
 
-
-        body += ['<h3>Transactions</h3>\n']
+        body += ['<a name="transactions"></a>']
+        body += ['<h3 >Transactions</h3>\n']
 
         body += ['<table class="mdl-data-table mdl-js-data-table mdl-shadow--2dp"><thead><tr><th>Transaction</th><th>Fee</th>'
                  '<th>Size (kB)</th><th>From (amount)</th><th>To (amount)</th>'
@@ -798,7 +808,8 @@ class Abe:
         body += '</tbody>'
         body += '</table>\n'
 
-        body += ['<h3>Fruits</h3>\n']
+        body += ['<a name="fruits"></a>']
+        body += ['<h3 >Fruits</h3>\n']
 
         body += ['<table class="mdl-data-table mdl-js-data-table mdl-shadow--2dp"><thead><tr><th>#</th><th>Hash</th>'
                  '<th>Creator</th>'
@@ -827,7 +838,8 @@ class Abe:
         body += '</table>\n'
 
         if b['height'] is not None and b['height'] != 0 and b['height'] % FRUIT_PERIOD_LENGTH == 0 :
-            body += ['<h3>Overview of this episode</h3>']
+            body += ['<a name="episode"></a>']
+            body += ['<h3 >Overview of this episode</h3>']
             body += """
     <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
     <script type="text/javascript">
@@ -914,8 +926,8 @@ class Abe:
             miners = sorted(miners, cmp=compare)
 
             if (len(miners) > 0) :
-                body += ['<h4 name="reward">Reward overall of miners</h4>']
-                body += ['<a href="#name" id="to-reward" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-color--accent mdl-color-text--accent-contrast">Reward Overall</a>']
+                body += ['<a name="reward"></a>']
+                body += ['<h4>Reward overall of miners</h4>']
             for (idx, miner) in enumerate(miners) :
                 txout = {}
                 abe.store._export_scriptPubKey(txout, chain, miner)
@@ -1081,22 +1093,28 @@ class Abe:
             '<br />\n',
             '<a href="../rawtx/', tx['hash'], '">Raw transaction</a><br />\n']
         body += ['</p>\n',
-                 '<a name="inputs"><h3>Inputs</h3></a>\n<table>\n',
+                 '<a name="inputs"><h3>Inputs</h3></a>\n<table class="mdl-data-table mdl-js-data-table mdl-shadow--2dp">\n',
+                 '<thead>'
                  '<tr><th>Index</th><th>Previous output</th><th>Amount</th>',
                  '<th>From address</th>']
         if abe.store.keep_scriptsig:
             body += ['<th>ScriptSig</th>']
         body += ['</tr>\n']
+        body += ['</thead>']
+        body += ['<tbody>']
         for txin in tx['in']:
             row_to_html(txin, 'i', 'o',
                         'Generation' if is_coinbase else 'Unknown')
+        body += ['</tbody>']
         body += ['</table>\n',
-                 '<a name="outputs"><h3>Outputs</h3></a>\n<table>\n',
+                 '<a name="outputs"><h3>Outputs</h3></a>\n<table class="mdl-data-table mdl-js-data-table mdl-shadow--2dp">\n',
+                 '<thead>'
                  '<tr><th>Index</th><th>Redeemed at input</th><th>Amount</th>',
-                 '<th>To address</th><th>ScriptPubKey</th></tr>\n']
+                 '<th>To address</th><th>ScriptPubKey</th></tr></thead>\n']
+        body += ['<tbody>']
         for txout in tx['out']:
             row_to_html(txout, 'o', 'i', 'Not yet redeemed')
-
+        body += ['</tbody>']
         body += ['</table>\n']
 
     def handle_rawtx(abe, page):
@@ -1206,10 +1224,11 @@ class Abe:
 
         body += ['</p>\n'
                  '<h3>Transactions</h3>\n'
-                 '<table class="addrhist">\n<tr><th>Transaction</th><th>Block</th>'
+                 '<table class="mdl-data-table mdl-js-data-table mdl-shadow--2dp addrhist">\n<thead><tr><th>Transaction</th><th>Block</th>'
                  '<th>Approx. Time</th><th>Amount</th><th>Balance</th>'
-                 '<th>Currency</th></tr>\n']
+                 '<th>Currency</th></tr></thead>\n']
 
+        body += ['<tbody>']
         for elt in txpoints:
             chain = elt['chain']
             type = elt['type']
@@ -1236,6 +1255,7 @@ class Abe:
                      format_satoshis(balance[chain.id], chain),
                      '</td><td class="currency">', escape(chain.code3),
                      '</td></tr>\n']
+        body += ['</tbody>']
         body += ['</table>\n']
 
     def search_form(abe, page):
