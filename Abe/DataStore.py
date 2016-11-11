@@ -1110,6 +1110,21 @@ store._ddl['txout_approx'],
     def reward_distribution(store, b, is_genesis, block_id, chain) :
         generation_tx = []
         if (b['height'] != None and not is_genesis and b['height'] % FRUIT_PERIOD_LENGTH == 0) :
+            rows = store.selectall("""
+                SELECT pos
+                FROM value_episode
+                WHERE episode_id = ?
+            """, (block_id, ))
+            if len(rows) > 0 :
+                return
+            if 'prev_block_id' not in b :
+                row = store.selectrow("""
+                    SELECT prev_block_id
+                    FROM block
+                    WHERE block_id = ?
+                """, (block_id, ))
+                assert row[0] is not None
+                b['prev_block_id'] = int(row[0])
             store.log.info('reward distr calc: %d', b['height'])
 
             def GetBlockSubsidy(n) :
@@ -1150,12 +1165,16 @@ store._ddl['txout_approx'],
                         SELECT prev_block_id
                         FROM block
                         WHERE block_id=?""", (bid, ))
-                    assert row != None
+                    if row is None :
+                        return
+                    #assert row != None
                     bid = row[0]
             row = store.selectrow("""
                 SELECT block_hash
                 FROM block
                 WHERE block_id=?""", (bid, ))
+            if row is None :
+                return
             assert row != None
             hashPrevEpisode = store.hashout(row[0])
             if b['height'] - FRUIT_PERIOD_LENGTH > 0 :
@@ -1164,12 +1183,16 @@ store._ddl['txout_approx'],
                         SELECT prev_block_id
                         FROM block
                         WHERE block_id=?""", (bid, ))
+                    if row is None :
+                        return
                     assert row != None
                     bid = row[0]
                 row = store.selectrow("""
                     SELECT block_hash
                     FROM block
                     WHERE block_id=?""", (bid, ))
+                if row is None :
+                    return
                 assert row != None
                 hashPrevPrevEpisode = store.hashout(row[0])
             else :
@@ -1178,7 +1201,7 @@ store._ddl['txout_approx'],
             reward_detail = [{} for x in xrange(FRUIT_PERIOD_LENGTH)]
 
             for i in xrange(FRUIT_PERIOD_LENGTH - 1, -1, -1) :
-                if nblock_id == block_id and ('prev_block_id' in b):
+                if nblock_id == block_id and ('prev_block_id' in b and 'value_in' in b and 'value_out' in b):
                     preblock_id, nvalue_in, nvalue_out = b['prev_block_id'], b['value_in'], b['value_out']
                     '''
                     for x in [preblock_id, nvalue_in, nvalue_out] :
@@ -1256,7 +1279,6 @@ store._ddl['txout_approx'],
                         (episode_id, pos, fee, coinbase)
                     VALUES (?, ?, ?, ?)
                 """, (block_id, i, fee, coinbase))
-
 
                 tmp = fee +coinbase
                 nTx['value_out'] += tmp
@@ -1574,7 +1596,7 @@ store._ddl['txout_approx'],
                  store.intin(b['satoshis']), store.intin(b['seconds']),
                  store.intin(b['total_ss']),
                  len(b['transactions']), len(b['fruits']), b['search_block_id']))
-            store.log.debug('block store suc: ' + str(b['hash'][::-1]).encode('hex'))
+            store.log.debug('block ' + str(block_id) + ' store suc: ' + str(b['hash'][::-1]).encode('hex'))
 
         except store.dbmodule.DatabaseError:
 
@@ -1788,7 +1810,12 @@ store._ddl['txout_approx'],
             chain_ids = chain_mask
 
         for chain_id in chain_ids:
+            if b['height'] is not None and b['height'] % FRUIT_PERIOD_LENGTH == 0 :
+                chain = store.chains_by.id[chain_id]
+                store.reward_distribution(b, False, block_id, chain)
+
             ret[chain_id] = (b, orphan_work)
+
 
         for row in store.selectall("""
             SELECT bn.next_block_id, b.block_nBits,
@@ -1817,12 +1844,12 @@ store._ddl['txout_approx'],
                       JOIN txin ON (bt.tx_id = txin.tx_id)
                       LEFT JOIN txout ON (txout.txout_id = txin.txout_id)
                      WHERE bt.block_id = ?""", (next_id,))
-                if count1 == count2 + 1:
+                if count1 == count2 + 0:
                     value_in = int(value)
                 else:
                     store.log.warning(
-                        "not updating block %d value_in: %s != %s + 1",
-                        next_id, repr(count1), repr(count2))
+                        "not updating block %d value_in: %s != %s + %d",
+                        next_id, repr(count1), repr(count2), 0)
             else:
                 value_in = int(value_in)
             generated = None if value_in is None else int(value_out - value_in)
@@ -1897,9 +1924,7 @@ store._ddl['txout_approx'],
                                store.intin(destroyed),
                                next_id))
 
-                chain = store.chains_by.id[[x for x in chain_ids][0]]
                 #store.log.info('orphan reward')
-                store.reward_distribution(b, False, block_id, chain)
 
                 if store.use_firstbits:
                     for (addr_vers,) in store.selectall("""
