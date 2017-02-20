@@ -594,7 +594,6 @@ class Abe:
 
             body += [
                 '<tr><td>',
-                '<strong><font color="red">G </font></strong>' if height % FRUIT_PERIOD_LENGTH == 0 else '',
                 '<a href="', page['dotdot'], 'block/',
                 abe.store.hashout_hex(hash),
                 '">', height, '</a>'
@@ -646,7 +645,7 @@ class Abe:
 
         body += ['<a href="#transactions" id="to-transactions" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-color--accent mdl-color-text--accent-contrast">Transactions</a>']
         body += [' <a href="#fruits" id="to-fruits" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-color--accent mdl-color-text--accent-contrast">Fruits</a>']
-        if b['height'] is not None and b['height'] != 0 and b['height'] % FRUIT_PERIOD_LENGTH == 0 :
+        if b['height'] is not None and b['height'] != 0 :
             body += [' <a href="#episode" id="to-episode" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-color--accent mdl-color-text--accent-contrast">Episode</a>']
             body += [' <a href="#reward" id="to-reward" class="mdl-button mdl-js-button mdl-button--raised mdl-js-ripple-effect mdl-color--accent mdl-color-text--accent-contrast">Reward of miners</a>']
         body += abe.short_link(page, 'b/' + block_shortlink(b['hash']))
@@ -828,7 +827,6 @@ class Abe:
         for (idx, frt) in enumerate(b['fruits']):
             is_ripe = (frt['hashPrevEpisode'] != b['hashPrevEpisode'])
             body += ['<tr><td>',
-                    '<strong><font color="green">R </font></strong>' if is_ripe else '',
                     idx,
                     '</td><td>', frt['hash'],
                      '</td><td>', pk2add[frt['scriptPubKey']],
@@ -837,9 +835,16 @@ class Abe:
         body += '</tbody>'
         body += '</table>\n'
 
-        if b['height'] is not None and b['height'] != 0 and b['height'] % FRUIT_PERIOD_LENGTH == 0 :
+        if b['height'] is not None and b['height'] != 0 and b['height'] :
+
+            if b['height'] < FRUIT_PERIOD_LENGTH :
+                start_point = FRUIT_PERIOD_LENGTH - b['height']
+            else :
+                start_point = 0
             body += ['<a name="episode"></a>']
             body += ['<h3 >Overview of this episode</h3>']
+            abe.store.log.info('start_point: %s', start_point)
+
             body += """
     <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
     <script type="text/javascript">
@@ -849,11 +854,9 @@ class Abe:
         var data = google.visualization.arrayToDataTable([
           ['position', 'fresh fruits', {role: 'annotation'}, 'ripe fruits', {role: 'annotation'}]"""
 
-            for i in xrange(FRUIT_PERIOD_LENGTH) :
+            for i in xrange(FRUIT_PERIOD_LENGTH - start_point) :
                 body += [',[\'' + str(i + 1) + '\', ',
-                    str(b['fruit_status'][i]['fresh'] + 1) + ', ' + '\'' + str(b['fruit_status'][i]['fresh'] + 1) + '\'' + ', ',
-                    str(b['fruit_status'][i]['ripe']) + ', ' + '\'' + str(b['fruit_status'][i]['ripe']) + '\'' + ' ',
-                    ']',
+                    str(b['fruit_status'][i]['fresh'] + 1) + ', ' + '\'' + str(b['fruit_status'][i]['fresh'] + 1) + '\'' +                    ']',
                 ]
 
             body += """
@@ -880,7 +883,7 @@ class Abe:
         var data2 = google.visualization.arrayToDataTable([
             ['position', 'fees', {role: 'annotation'}, 'coinbase', {role: 'annotation'}]"""
 
-            for i in xrange(FRUIT_PERIOD_LENGTH) :
+            for i in xrange(FRUIT_PERIOD_LENGTH - start_point) :
                 body += [',[\'' + str(i + 1) + '\', ',
                  format_satoshis(b['value_status'][i]['fee'], chain) + ', ' + '\'' + format_satoshis(b['value_status'][i]['fee'], chain) + '\'' + ', ',
                       format_satoshis(b['value_status'][i]['coinbase'], chain) + ', ' + '\'' + format_satoshis(b['value_status'][i]['coinbase'], chain) + '\'' + ' ',
@@ -919,6 +922,8 @@ class Abe:
 # the following displays the detail of current episode
             miners = {}
             for i in xrange(FRUIT_PERIOD_LENGTH) :
+                if i < start_point :
+                    continue
                 for creator in b['reward_detail'][i] :
                     miners[creator] = 1
 
@@ -947,6 +952,8 @@ class Abe:
                           ['position', 'by creating blocks', 'by collecting fresh fruits', 'by collecting ripe fruits', 'by creating fresh fruits', {role: 'annotation'}, 'by creating ripe fruits', {role: 'annotation'}]"""
 
                 for i in xrange(FRUIT_PERIOD_LENGTH) :
+                    if i < start_point :
+                        continue
                     if miner in b['reward_detail'][i] :
                         detail = b['reward_detail'][i][miner]
                     else :

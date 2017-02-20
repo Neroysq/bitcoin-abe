@@ -153,6 +153,7 @@ class BaseChain(object):
         ds.read_uint32()
         ds.read_uint32()
         ds.read_bytes(ds.read_compact_size())
+        ds.read_bytes(1)
         header_end = ds.read_cursor
         content = ds.input[header_start:header_end]
         ds.read_cursor = header_start

@@ -1109,7 +1109,7 @@ store._ddl['txout_approx'],
 
     def reward_distribution(store, b, is_genesis, block_id, chain) :
         generation_tx = []
-        if (b['height'] != None and not is_genesis and b['height'] % FRUIT_PERIOD_LENGTH == 0) :
+        if (b['height'] != None and not is_genesis) :
             rows = store.selectall("""
                 SELECT pos
                 FROM value_episode
@@ -1147,7 +1147,6 @@ store._ddl['txout_approx'],
             reward_distr = {}
             fruit_creator = {}
             fresh_f = {}
-            ripe_f = {}
             f = {}
             F = 0
             S = 0
@@ -1155,52 +1154,17 @@ store._ddl['txout_approx'],
             nblock_id = block_id
             preblock_id = None
 
-            #get hashPrevEpisode and hashPrevPrevEpisode
-            bid = nblock_id
-            for i in xrange(FRUIT_PERIOD_LENGTH) :
-                if bid == block_id :
-                    bid = b['prev_block_id']
-                else :
-                    row = store.selectrow("""
-                        SELECT prev_block_id
-                        FROM block
-                        WHERE block_id=?""", (bid, ))
-                    if row is None :
-                        return
-                    #assert row != None
-                    bid = row[0]
-            row = store.selectrow("""
-                SELECT block_hash
-                FROM block
-                WHERE block_id=?""", (bid, ))
-            if row is None :
-                return
-            assert row != None
-            hashPrevEpisode = store.hashout(row[0])
-            if b['height'] - FRUIT_PERIOD_LENGTH > 0 :
-                for i in xrange(FRUIT_PERIOD_LENGTH) :
-                    row = store.selectrow("""
-                        SELECT prev_block_id
-                        FROM block
-                        WHERE block_id=?""", (bid, ))
-                    if row is None :
-                        return
-                    assert row != None
-                    bid = row[0]
-                row = store.selectrow("""
-                    SELECT block_hash
-                    FROM block
-                    WHERE block_id=?""", (bid, ))
-                if row is None :
-                    return
-                assert row != None
-                hashPrevPrevEpisode = store.hashout(row[0])
-            else :
-                hashPrevPrevEpisode = None
 
             reward_detail = [{} for x in xrange(FRUIT_PERIOD_LENGTH)]
 
+            if b['height'] < FRUIT_PERIOD_LENGTH :
+                start_point = FRUIT_PERIOD_LENGTH - b['height']
+            else :
+                start_point = 0
+
             for i in xrange(FRUIT_PERIOD_LENGTH - 1, -1, -1) :
+                if i < start_point :
+                    break
                 if nblock_id == block_id and ('prev_block_id' in b and 'value_in' in b and 'value_out' in b):
                     preblock_id, nvalue_in, nvalue_out = b['prev_block_id'], b['value_in'], b['value_out']
                     '''
@@ -1238,36 +1202,19 @@ store._ddl['txout_approx'],
                 f[i] = len(frts) + 1
 
                 fresh_f[i] = 1
-                ripe_f[i] = 0
 
                 vfc = [[block_creator],[]]
                 for frt in frts :
                     creator = frt['scriptPubKey']
                     #store.log.info('%s\n', store.binout_hex(creator).encode('hex'))
-                    if frt['hashPrevEpisode'] == hashPrevEpisode :
-                        fresh_f[i] += 1
-                        vfc[0].append(creator)
-                        store.sql("""
-                            INSERT INTO fruit_episode
-                                (frt_id, episode_id, pos, is_fresh)
-                            VALUES (?, ?, ?, ?)
-                            """, (frt['frt_id'], block_id, i, True))
-                    elif frt['hashPrevEpisode'] == hashPrevPrevEpisode :
-                        ripe_f[i] += 1
-                        vfc[1].append(creator)
-                        store.sql("""
-                            INSERT INTO fruit_episode
-                                (frt_id, episode_id, pos, is_fresh)
-                            VALUES (?, ?, ?, ?)
-                            """, (frt['frt_id'], block_id, i, False))
-                    else :
-                        assert 0 == 1
-                        #store.log.info('frt: %s', store.binout_hex(frt['hashPrevEpisode']).encode('hex'))
+                    fresh_f[i] += 1
+                    vfc[0].append(creator)
+                    store.sql("""
+                        INSERT INTO fruit_episode
+                            (frt_id, episode_id, pos, is_fresh)
+                        VALUES (?, ?, ?, ?)
+                        """, (frt['frt_id'], block_id, i, True))
 
-                store.log.info('Looking at %d: %d %s frts: %d(%d/%d)', i, nblock_id, store.binout_hex(block_creator).encode('hex'), f[i], fresh_f[i], ripe_f[i])
-                store.log.info('prev: %s', store.binout_hex(hashPrevEpisode).encode('hex'))
-                if hashPrevPrevEpisode != None :
-                    store.log.info('prevprev: %s', store.binout_hex(hashPrevPrevEpisode).encode('hex'))
                 fruit_creator[i] = vfc
 
                 block_creators[i] = block_creator
@@ -1281,6 +1228,8 @@ store._ddl['txout_approx'],
                 """, (block_id, i, fee, coinbase))
 
                 tmp = fee +coinbase
+                if i != FRUIT_PERIOD_LENGTH - 1 :
+                    tmp = 0
                 nTx['value_out'] += tmp
                 reward_creator = tmp * FEE_FRACTION_C1_NUMERATOR / FEE_FRACTION_C1_DENOMINATOR
                 S += tmp - reward_creator
@@ -1303,23 +1252,22 @@ store._ddl['txout_approx'],
 
             rest = S
             store.log.info('S: %d F: %d', S, F)
-            ripe_reward_per_fruit_cr = (S * (REWARD_CREATE_FRACTION_C2_DENOMINATOR * (FRUIT_PERIOD_LENGTH * REWARD_DIFF_FRACTION_C3_DENOMINATOR) - REWARD_CREATE_FRACTION_C2_NUMERATOR * (FRUIT_PERIOD_LENGTH) * REWARD_DIFF_FRACTION_C3_DENOMINATOR)) / (F * (FRUIT_PERIOD_LENGTH) * REWARD_CREATE_FRACTION_C2_DENOMINATOR * REWARD_DIFF_FRACTION_C3_DENOMINATOR)
-            ripe_reward_per_fruit_co = S / F - ripe_reward_per_fruit_cr
-            store.log.info('ripe: %d %d', ripe_reward_per_fruit_cr, ripe_reward_per_fruit_co)
+
 
             for i in xrange(FRUIT_PERIOD_LENGTH) :
+                if i < start_point :
+                    continue
+                REWARD_CREATE_FRACTION_C2_NUMERATOR = 1
+                REWARD_CREATE_FRACTION_C2_DENOMINATOR = 8 + 2
                 reward_per_fruit_cr = (S * (REWARD_CREATE_FRACTION_C2_DENOMINATOR * (FRUIT_PERIOD_LENGTH * REWARD_DIFF_FRACTION_C3_DENOMINATOR + (FRUIT_PERIOD_LENGTH - (i)) * REWARD_DIFF_FRACTION_C3_NUMERATOR) - REWARD_CREATE_FRACTION_C2_NUMERATOR * (FRUIT_PERIOD_LENGTH) * REWARD_DIFF_FRACTION_C3_DENOMINATOR)) / (F * (FRUIT_PERIOD_LENGTH) * REWARD_CREATE_FRACTION_C2_DENOMINATOR * REWARD_DIFF_FRACTION_C3_DENOMINATOR)
-
                 reward_per_fruit_co = S / F - reward_per_fruit_cr
                 store.log.info('%d: %d %d', i, reward_per_fruit_cr, reward_per_fruit_co)
                 tmp_reward_fresh = reward_per_fruit_co * fresh_f[i]
-                tmp_reward_ripe = ripe_reward_per_fruit_co * ripe_f[i]
-                tmp_reward_co = tmp_reward_fresh + tmp_reward_ripe
+                tmp_reward_co = tmp_reward_fresh
                 reward_distr[block_creators[i]] += tmp_reward_co
                 rest -= tmp_reward_co
 
                 reward_detail[i][block_creators[i]]['from_collecting_fresh_fruit'] = tmp_reward_fresh
-                reward_detail[i][block_creators[i]]['from_collecting_ripe_fruit'] = tmp_reward_ripe
 
                 for creator in fruit_creator[i][0] :
                     if creator not in reward_distr :
@@ -1340,30 +1288,11 @@ store._ddl['txout_approx'],
                         reward_detail[i][creator]['from_creating_fresh_fruit'] += reward_per_fruit_cr
                         reward_detail[i][creator]['fresh_fruit'] += 1
 
-                for creator in fruit_creator[i][1] :
-                    if creator not in reward_distr :
-                        reward_distr[creator] = 0
-                    reward_distr[creator] += ripe_reward_per_fruit_cr
-                    rest -= ripe_reward_per_fruit_cr
-                    if creator not in reward_detail[i] :
-                        reward_detail[i][creator] = {
-                            'from_creating_block': 0,
-                            'from_collecting_fresh_fruit': 0,
-                            'from_collecting_ripe_fruit': 0,
-                            'from_creating_fresh_fruit': 0,
-                            'fresh_fruit': 0,
-                            'from_creating_ripe_fruit': ripe_reward_per_fruit_cr,
-                            'ripe_fruit': 1
-                        }
-                    else :
-                        reward_detail[i][creator]['from_creating_ripe_fruit'] += ripe_reward_per_fruit_cr
-                        reward_detail[i][creator]['ripe_fruit'] += 1
-
                 store.log.info('rest: %d', rest)
 
             if rest != 0 :
-                reward_distr[block_creators[0]] += rest
-                reward_detail[0][block_creators[0]]['from_creating_block'] += rest
+                reward_distr[block_creators[start_point]] += rest
+                reward_detail[start_point][block_creators[start_point]]['from_creating_block'] += rest
 
             store.log.info('break point')
 
@@ -1810,7 +1739,7 @@ store._ddl['txout_approx'],
             chain_ids = chain_mask
 
         for chain_id in chain_ids:
-            if b['height'] is not None and b['height'] % FRUIT_PERIOD_LENGTH == 0 :
+            if b['height'] is not None and b['height'] > 0 :
                 chain = store.chains_by.id[chain_id]
                 store.reward_distribution(b, False, block_id, chain)
 
@@ -2290,10 +2219,18 @@ store._ddl['txout_approx'],
             txs[tx_ids[1]]['fees'] = 0
             b['fees'] += b['proof_of_stake_generated']
 
-        if b['height'] is not None and b['height'] > 0 and b['height'] % FRUIT_PERIOD_LENGTH == 0 :
+        if b['height'] is not None and b['height'] > 0 :
             b['fruit_status'] = []
             b['value_status'] = []
+
+            if b['height'] < FRUIT_PERIOD_LENGTH :
+                start_point = FRUIT_PERIOD_LENGTH - b['height']
+            else :
+                start_point = 0
+
             for i in xrange(FRUIT_PERIOD_LENGTH) :
+                if i < start_point :
+                    continue
                 a = {
                     'fresh': 0,
                     'ripe': 0,
@@ -2324,6 +2261,8 @@ store._ddl['txout_approx'],
 
             b['reward_detail'] = [{} for x in xrange(FRUIT_PERIOD_LENGTH)]
             for i in xrange(FRUIT_PERIOD_LENGTH) :
+                if i < start_point :
+                    continue
                 for row in store.selectall("""
                     SELECT scriptPubKey, from_creating_block, from_collecting_fresh_fruit, from_collecting_ripe_fruit, from_creating_fresh_fruit, fresh_fruit, from_creating_ripe_fruit, ripe_fruit
                     FROM reward_detail

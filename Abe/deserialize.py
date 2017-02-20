@@ -182,6 +182,7 @@ def parse_BlockHeader(vds):
   d['nBits'] = vds.read_uint32()
   d['nNonce'] = vds.read_uint32()
   d['scriptPubKey'] = vds.read_bytes(vds.read_compact_size())
+  d['nTax'] = vds.read_bytes(1)
   header_end = vds.read_cursor
   d['__header__'] = vds.input[header_start:header_end]
   return d
