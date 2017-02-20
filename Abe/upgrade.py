@@ -331,6 +331,7 @@ def replace_chain_summary(store):
             b.block_nBits,
             b.block_nNonce,
             b.block_scriptPubKey,
+            b.block_nTax,
             cc.block_height,
             b.prev_block_id,
             prev.block_hash prev_block_hash,

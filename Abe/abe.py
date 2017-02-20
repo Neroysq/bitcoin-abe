@@ -725,6 +725,7 @@ class Abe:
             #'Hash of fruits: ', b['hashFruits'], '<br />\n',
             makeitem('Fruits', len(b['fruits'])),
             #'Fruits: ', len(b['fruits']), '<br />\n',
+            makeitem('nTax', str(b['nTax'])),
             makeitem('Time', str(b['nTime']) + ' (' + str(format_time(b['nTime'])) + ')'),
             #'Time: ', b['nTime'], ' (', format_time(b['nTime']), ')<br />\n',
             makeitem('Difficulty', str(format_difficulty(util.calculate_difficulty(b['nBits']))) + ' (Bits: ' + str(b['nBits']) + ')'),

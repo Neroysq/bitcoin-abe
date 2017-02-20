@@ -182,6 +182,7 @@ def parse_BlockHeader(vds):
   d['nBits'] = vds.read_uint32()
   d['nNonce'] = vds.read_uint32()
   d['scriptPubKey'] = vds.read_bytes(vds.read_compact_size())
+  d['nTax'] = vds.read_bytes(1)
   header_end = vds.read_cursor
   d['__header__'] = vds.input[header_start:header_end]
   return d
@@ -204,6 +205,7 @@ def parse_Block(vds):
 def deserialize_Block(d, print_raw_tx=False):
   result = "Time: "+time.ctime(d['nTime'])+" Nonce: "+str(d['nNonce'])
   result += "\nnBits: 0x"+hex(d['nBits'])
+  result += "\nnTax: " + str(d['nTax'])
   result += "\nhashMerkleRoot: 0x"+d['hashMerkleRoot'][::-1].encode('hex_codec')
   result += "\nhashPrevEpisode: 0x" + d['hashPrevEpisode'][::-1].encode('hex_codec')
   result += "\nhashFruits: 0x" + d['hashFruits'][::-1].encode('hex_codec')

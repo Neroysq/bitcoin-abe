@@ -106,6 +106,7 @@ class BaseChain(object):
         ds.write_uint32(block['nBits'])
         ds.write_uint32(block['nNonce'])
         ds.write_string(block['scriptPubKey'])
+        ds.write(block['nTax'])
 
     def ds_serialize_transaction(chain, ds, tx):
         ds.write_int32(tx['version'])
